@@ -7,31 +7,28 @@ on:
 
 jobs:
   test:
-    name: Test on Node ${{ matrix.node-version }}
+    name: Test with Bun
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version: [20, 22]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
         with:
-          node-version: ${{ matrix.node-version }}
+          bun-version: latest
 
       - name: Install dependencies
-        run: npm ci
+        run: bun install
 
       - name: Type check
-        run: npm run typecheck
+        run: bun run typecheck
 
       - name: Run tests
-        run: npm run test:run
+        run: bun test --run
 
       - name: Build
-        run: npm run build
+        run: bun run build
 
   publish:
     name: Publish to npm
@@ -45,17 +42,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
         with:
-          node-version: 22
-          registry-url: 'https://registry.npmjs.org'
+          bun-version: latest
 
       - name: Install dependencies
-        run: npm ci
+        run: bun install
 
       - name: Build
-        run: npm run build
+        run: bun run build
 
       - name: Publish to npm
         run: npm publish --provenance --access public
