@@ -317,6 +317,35 @@ export function getAgeColor(category: AgeCategory): string {
 }
 
 /**
+ * Calculate a cleanup priority score for a node_modules.
+ * Larger and older = higher priority for cleanup.
+ * 
+ * @param item - Node modules to score
+ * @returns Priority score (higher = more urgent to clean)
+ */
+export function getCleanupPriority(item: NodeModulesInfo): number {
+  // Size score: logarithmic scale, 1GB = 100 points
+  const sizeScore = Math.log2(item.sizeBytes + 1) * 10;
+  
+  // Age score: 1 year = 100 points
+  const ageScore = getAgeInDays(item.lastModified);
+  
+  // Combined score: prioritize large and old
+  return Math.round(sizeScore + (ageScore / 3));
+}
+
+/**
+ * Sort node_modules by cleanup priority (highest first).
+ * Combines size and age for intelligent ranking.
+ * 
+ * @param items - Array to sort
+ * @returns New sorted array with highest priority first
+ */
+export function sortByCleanupPriority(items: NodeModulesInfo[]): NodeModulesInfo[] {
+  return [...items].sort((a, b) => getCleanupPriority(b) - getCleanupPriority(a));
+}
+
+/**
  * Truncate a string to fit within a maximum length.
  * Adds ellipsis if truncated.
  * 

@@ -135,6 +135,32 @@ export async function scanForNodeModules(
 }
 
 /**
+ * Find the repo root by looking for .git directory.
+ * Walks up the directory tree until .git is found or root is reached.
+ * 
+ * @param startPath - Starting path to search from
+ * @returns Path to repo root, or startPath if no .git found
+ */
+async function findRepoRoot(startPath: string): Promise<string> {
+  let currentPath = startPath;
+  const root = '/';
+  
+  while (currentPath !== root) {
+    const gitPath = join(currentPath, '.git');
+    try {
+      if (await fileExists(gitPath)) {
+        return currentPath;
+      }
+    } catch {
+      // Continue searching
+    }
+    currentPath = dirname(currentPath);
+  }
+  
+  return startPath;
+}
+
+/**
  * Analyze a specific node_modules directory and extract all metadata.
  * 
  * This function performs the heavy lifting of:
@@ -164,6 +190,9 @@ export async function analyzeNodeModules(
   const projectName = packageJson?.name || basename(projectPath);
   const projectVersion = packageJson?.version;
 
+  // Find repo root by looking for .git
+  const repoPath = await findRepoRoot(projectPath);
+
   // Determine categories
   const sizeCategory = getSizeCategory(totalSize);
   const ageCategory = getAgeCategory(stats.mtime);
@@ -173,6 +202,7 @@ export async function analyzeNodeModules(
     projectPath,
     projectName,
     projectVersion,
+    repoPath,
     sizeBytes: totalSize,
     sizeFormatted: formatBytes(totalSize),
     packageCount,
@@ -399,8 +429,9 @@ export async function quickScan(rootPath: string): Promise<Array<{
   path: string;
   projectPath: string;
   projectName: string;
+  repoPath: string;
 }>> {
-  const results: Array<{ path: string; projectPath: string; projectName: string }> = [];
+  const results: Array<{ path: string; projectPath: string; projectName: string; repoPath: string }> = [];
   const visitedPaths = new Set<string>();
   const pathsToScan = [rootPath];
 
@@ -421,11 +452,13 @@ export async function quickScan(rootPath: string): Promise<Array<{
         const projectPath = currentPath;
         const nodeModulesPath = join(currentPath, 'node_modules');
         const packageJson = await readPackageJson(projectPath);
+        const repoPath = await findRepoRoot(projectPath);
         
         results.push({
           path: nodeModulesPath,
           projectPath,
           projectName: packageJson?.name || basename(projectPath),
+          repoPath,
         });
       }
 

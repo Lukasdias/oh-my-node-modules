@@ -22,6 +22,9 @@ export interface NodeModulesInfo {
   /** Project version from package.json, or undefined if not available */
   projectVersion?: string;
   
+  /** Absolute path to the repo root (where .git is found) */
+  repoPath: string;
+  
   /** Total size in bytes (recursive, includes all nested files) */
   sizeBytes: number;
   
