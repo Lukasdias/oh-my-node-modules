@@ -51,6 +51,14 @@
   ],
   "author": "Your Name <your.email@example.com>",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Lukasdias/oh-my-node-modules.git"
+  },
+  "homepage": "https://github.com/Lukasdias/oh-my-node-modules",
+  "bugs": {
+    "url": "https://github.com/Lukasdias/oh-my-node-modules/issues"
+  },
   "engines": {
     "node": ">=20.0.0"
   },

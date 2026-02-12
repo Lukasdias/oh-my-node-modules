@@ -71,6 +71,10 @@ bun run dev    # Watch mode
 
 The built output works with both Bun and Node.js.
 
+## Repository
+
+https://github.com/Lukasdias/oh-my-node-modules
+
 ## Architecture
 
 See [AGENTS.md](./AGENTS.md) for codebase documentation.
