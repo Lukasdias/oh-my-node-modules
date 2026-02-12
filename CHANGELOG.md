@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.1 (2026-02-12)
+
+### 🔧 Infrastructure
+
+- **Security improvement:** Remove NODE_AUTH_TOKEN - use OIDC trusted publishers instead
+  - Migrated from long-lived NPM tokens to OIDC-based authentication
+  - Uses short-lived credentials generated during CI/CD workflows
+  - Improved security posture for package publishing
+
 ## 1.2.0 (2026-02-12)
 
 ### ♻️ Refactoring
