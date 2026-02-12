@@ -4,6 +4,7 @@ build/
 
 # Dependencies
 node_modules/
+bun.lockb
 
 # Logs
 *.log
@@ -38,3 +39,6 @@ coverage/
 
 # Test fixtures (if any)
 test/fixtures/**/node_modules/
+
+# Local opencode commands (personal)
+.opencode/commands/

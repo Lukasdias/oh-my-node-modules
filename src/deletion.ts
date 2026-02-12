@@ -169,11 +169,19 @@ async function verifyNodeModules(path: string): Promise<boolean> {
 
     // Check it has contents (not empty)
     const entries = await fs.readdir(path);
-    const hasSubdirs = entries.some(async entry => {
+    let hasSubdirs = false;
+    for (const entry of entries) {
       const entryPath = join(path, entry);
-      const stats = await fs.stat(entryPath);
-      return stats.isDirectory();
-    });
+      try {
+        const stats = await fs.stat(entryPath);
+        if (stats.isDirectory()) {
+          hasSubdirs = true;
+          break;
+        }
+      } catch {
+        // Skip entries we can't stat
+      }
+    }
 
     // Parent should have package.json
     const parentPath = path.replace(/\/node_modules$/, '').replace(/\\node_modules$/, '');

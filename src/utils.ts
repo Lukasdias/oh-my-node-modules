@@ -12,45 +12,14 @@ import type {
   NodeModulesInfo, 
   AgeCategory, 
   SizeCategory,
-  SortOption 
+  SortOption,
+  ScanStatistics
 } from './types.js';
 import { SIZE_THRESHOLDS, AGE_THRESHOLDS } from './types.js';
 
 // Re-export for convenience
 export { SIZE_THRESHOLDS, AGE_THRESHOLDS };
-
-/**
- * Statistics calculated from a list of node_modules.
- * Used for summary displays and overview headers.
- */
-export interface ScanStatistics {
-  /** Total number of projects found */
-  totalProjects: number;
-  
-  /** Total number of node_modules directories */
-  totalNodeModules: number;
-  
-  /** Total size of all node_modules in bytes */
-  totalSizeBytes: number;
-  
-  /** Total size formatted as human-readable string */
-  totalSizeFormatted: string;
-  
-  /** Number of selected node_modules */
-  selectedCount: number;
-  
-  /** Total size of selected node_modules */
-  selectedSizeBytes: number;
-  
-  /** Total size of selected formatted */
-  selectedSizeFormatted: string;
-  
-  /** Average age in days */
-  averageAgeDays: number;
-  
-  /** Number of stale node_modules (>30 days) */
-  staleCount: number;
-}
+export type { ScanStatistics };
 
 /**
  * Format bytes into human-readable string.

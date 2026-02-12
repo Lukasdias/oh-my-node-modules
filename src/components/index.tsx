@@ -15,8 +15,8 @@
 
 import React from 'react';
 import { Box, Text, useInput } from 'ink';
-import type { NodeModulesInfo, SortOption } from '../types.js';
-import type { ScanStatistics } from '../utils.js';
+import type { NodeModulesInfo, SortOption, ScanStatistics } from '../types.js';
+import { getSizeColor } from '../utils.js';
 
 // ============================================
 // Header Component
@@ -356,16 +356,6 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
 // ============================================
 // Helper Functions
 // ============================================
-
-function getSizeColor(category: string): string {
-  switch (category) {
-    case 'huge': return 'red';
-    case 'large': return 'yellow';
-    case 'medium': return 'cyan';
-    case 'small': return 'green';
-    default: return 'white';
-  }
-}
 
 function getSortLabel(sortBy: SortOption): string {
   const labels: Record<SortOption, string> = {
