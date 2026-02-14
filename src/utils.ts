@@ -235,9 +235,10 @@ export function shouldExcludePath(path: string, patterns: string[]): boolean {
   return patterns.some(pattern => {
     // Handle the special case of hidden directories: **/.* or .*
     // This should match paths like /home/user/.config or .git
+    // but NOT ./ or paths like ./personal
     if (pattern === '**/.*' || pattern === '.*') {
-      // Match any component that starts with a dot
-      return /(^|\/)\.[^\/]*($|\/)/.test(path);
+      // Match any component that starts with a dot followed by actual characters
+      return /(^|\/)\.[^\/]+($|\/)/.test(path);
     }
     
     // Convert glob pattern to regex
