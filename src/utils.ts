@@ -233,6 +233,13 @@ export function calculateStatistics(items: NodeModulesInfo[]): ScanStatistics {
  */
 export function shouldExcludePath(path: string, patterns: string[]): boolean {
   return patterns.some(pattern => {
+    // Handle the special case of hidden directories: **/.* or .*
+    // This should match paths like /home/user/.config or .git
+    if (pattern === '**/.*' || pattern === '.*') {
+      // Match any component that starts with a dot
+      return /(^|\/)\.[^\/]*($|\/)/.test(path);
+    }
+    
     // Convert glob pattern to regex
     const regexPattern = pattern
       .replace(/\*\*/g, '{{GLOBSTAR}}')

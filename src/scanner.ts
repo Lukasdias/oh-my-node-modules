@@ -1,11 +1,8 @@
 /**
  * Optimized scanner module for discovering and analyzing node_modules directories
  * 
- * This module uses multiple optimization strategies:
- * 1. Parallel directory scanning with p-limit (concurrency control)
- * 2. Native system commands for fast size calculation (du/dir)
- * 3. Worker threads for CPU-intensive size calculations
- * 4. Lazy size calculation mode for immediate UI feedback
+ * Uses sequential BFS for reliable directory discovery,
+ * parallel processing only for size calculations.
  */
 
 import { promises as fs } from 'fs';
@@ -23,9 +20,8 @@ import {
 } from './utils.js';
 import { getFastDirectorySize } from './native-size.js';
 
-// Concurrency limits to prevent overwhelming the system
-const DEFAULT_CONCURRENCY = 5;
-const SIZE_CALCULATION_CONCURRENCY = 3;
+// Concurrency limit for size calculations only
+const SIZE_CALCULATION_CONCURRENCY = 4;
 
 /**
  * Find the repo root by looking for .git directory.
@@ -58,7 +54,7 @@ function getAgeInDays(date: Date): number {
 }
 
 /**
- * Calculate directory size using JS fallback (iterative, non-recursive stack).
+ * Calculate directory size using JS fallback (iterative).
  */
 async function calculateDirectorySizeFallback(dirPath: string): Promise<{
   totalSize: number;
@@ -85,7 +81,7 @@ async function calculateDirectorySizeFallback(dirPath: string): Promise<{
       if (stats.isFile()) {
         totalSize += stats.size;
       } else if (stats.isDirectory()) {
-        totalSize += 4096; // Directory entry size estimate
+        totalSize += 4096;
         
         if (isTopLevel && currentPath !== dirPath) {
           const entryName = basename(currentPath);
@@ -125,7 +121,6 @@ async function calculateDirectorySizeFallback(dirPath: string): Promise<{
 
 /**
  * Calculate size using fastest available method.
- * Priority: native commands > JS fallback
  */
 async function calculateSizeWithFallback(dirPath: string): Promise<{
   totalSize: number;
@@ -164,7 +159,7 @@ export async function analyzeNodeModules(
   // Get basic stats
   const stats = await fs.stat(nodeModulesPath);
   
-  // In lazy mode, return pending info and calculate size in background
+  // In lazy mode, return pending info
   if (lazy) {
     const packageJson = await readPackageJson(projectPath);
     const projectName = packageJson?.name || basename(projectPath);
@@ -243,13 +238,10 @@ export async function updateNodeModulesSize(
 }
 
 /**
- * Scan for node_modules directories with parallel processing.
+ * Scan for node_modules directories.
  * 
- * OPTIMIZATIONS:
- * - Uses p-limit for controlled concurrency
- * - Parallel directory scanning
- * - Parallel size calculations
- * - Native system commands when available
+ * Uses sequential BFS for reliable discovery,
+ * parallel processing only for size calculations.
  */
 export async function scanForNodeModules(
   options: ScanOptions,
@@ -267,92 +259,99 @@ export async function scanForNodeModules(
     { path: options.rootPath, depth: 0 },
   ];
 
-  // Create concurrency limiters
-  const scanLimit = pLimit(DEFAULT_CONCURRENCY);
-  const sizeLimit = pLimit(SIZE_CALCULATION_CONCURRENCY);
+  // Collect all node_modules paths first (fast)
+  const foundNodeModules: Array<{ nodeModulesPath: string; projectPath: string }> = [];
 
   let processedCount = 0;
   let totalEstimate = 1;
-  let foundCount = 0;
 
-  // Process directories in parallel batches
+  // Phase 1: Sequential BFS to find all node_modules directories
   while (pathsToScan.length > 0) {
-    const batch = pathsToScan.splice(0, Math.min(pathsToScan.length, DEFAULT_CONCURRENCY * 2));
+    const { path: currentPath, depth } = pathsToScan.shift()!;
+
+    // Skip if already visited or exceeds max depth
+    if (visitedPaths.has(currentPath)) continue;
+    if (options.maxDepth !== undefined && depth > options.maxDepth) continue;
+    if (shouldExcludePath(currentPath, options.excludePatterns)) continue;
+
+    visitedPaths.add(currentPath);
+    result.directoriesScanned++;
+
+    try {
+      const entries = await fs.readdir(currentPath, { withFileTypes: true });
+      
+      // Check if current directory has node_modules
+      const hasNodeModules = entries.some(
+        entry => entry.isDirectory() && entry.name === 'node_modules'
+      );
+
+      if (hasNodeModules) {
+        const nodeModulesPath = join(currentPath, 'node_modules');
+        foundNodeModules.push({ nodeModulesPath, projectPath: currentPath });
+        
+        if (onProgress) {
+          onProgress(Math.min(100, Math.round((processedCount / totalEstimate) * 100)), foundNodeModules.length);
+        }
+      }
+
+      // Queue subdirectories for scanning
+      for (const entry of entries) {
+        if (
+          entry.isDirectory() &&
+          entry.name !== 'node_modules' &&
+          !entry.name.startsWith('.')
+        ) {
+          const subPath = join(currentPath, entry.name);
+          if (!shouldExcludePath(subPath, options.excludePatterns)) {
+            pathsToScan.push({ path: subPath, depth: depth + 1 });
+            totalEstimate++;
+          }
+        }
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      result.errors.push(`Error scanning ${currentPath}: ${errorMessage}`);
+    }
+
+    processedCount++;
+    if (onProgress && foundNodeModules.length === 0) {
+      onProgress(Math.min(100, Math.round((processedCount / totalEstimate) * 100)), 0);
+    }
+  }
+
+  // Phase 2: Parallel size calculation
+  if (foundNodeModules.length > 0) {
+    const sizeLimit = pLimit(SIZE_CALCULATION_CONCURRENCY);
     
-    const scanPromises = batch.map(({ path: currentPath, depth }) => 
-      scanLimit(async () => {
-        // Skip if already visited or exceeds max depth
-        if (visitedPaths.has(currentPath)) return;
-        if (options.maxDepth !== undefined && depth > options.maxDepth) return;
-        if (shouldExcludePath(currentPath, options.excludePatterns)) return;
-
-        visitedPaths.add(currentPath);
-        result.directoriesScanned++;
-
+    const analysisPromises = foundNodeModules.map(({ nodeModulesPath, projectPath }) =>
+      sizeLimit(async () => {
         try {
-          const entries = await fs.readdir(currentPath, { withFileTypes: true });
-          
-          // Check if current directory has node_modules
-          const hasNodeModules = entries.some(
-            entry => entry.isDirectory() && entry.name === 'node_modules'
-          );
+          const info = await analyzeNodeModules(nodeModulesPath, projectPath, lazy);
 
-          if (hasNodeModules) {
-            const nodeModulesPath = join(currentPath, 'node_modules');
-            
-            // Analyze with size calculation (or lazy placeholder)
-            const info = await sizeLimit(() => 
-              analyzeNodeModules(nodeModulesPath, currentPath, lazy)
-            );
-
-            // Apply filters
+          // Apply filters (only in non-lazy mode)
+          if (!lazy) {
             const passesFilter = (!options.minSizeBytes || info.sizeBytes >= options.minSizeBytes) &&
               (!options.olderThanDays || getAgeInDays(info.lastModified) >= options.olderThanDays);
 
-            if (passesFilter || lazy) { // In lazy mode, add all and filter later
+            if (passesFilter) {
               result.nodeModules.push(info);
-              foundCount++;
-              
-              // Report progress immediately when finding node_modules
-              if (onProgress) {
-                onProgress(Math.min(100, Math.round((processedCount / totalEstimate) * 100)), foundCount);
-              }
             }
-          }
-
-          // Queue subdirectories for scanning
-          for (const entry of entries) {
-            if (
-              entry.isDirectory() &&
-              entry.name !== 'node_modules' &&
-              !entry.name.startsWith('.')
-            ) {
-              const subPath = join(currentPath, entry.name);
-              if (!shouldExcludePath(subPath, options.excludePatterns)) {
-                pathsToScan.push({ path: subPath, depth: depth + 1 });
-                totalEstimate++;
-              }
-            }
+          } else {
+            result.nodeModules.push(info);
           }
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
-          result.errors.push(`Error scanning ${currentPath}: ${errorMessage}`);
-        }
-
-        processedCount++;
-        if (onProgress) {
-          onProgress(Math.min(100, Math.round((processedCount / totalEstimate) * 100)), foundCount);
+          result.errors.push(`Error analyzing ${nodeModulesPath}: ${errorMessage}`);
         }
       })
     );
 
-    // Wait for batch to complete before starting next batch
-    await Promise.all(scanPromises);
+    await Promise.all(analysisPromises);
   }
 
   // Ensure we report 100% at the end
   if (onProgress) {
-    onProgress(100, foundCount);
+    onProgress(100, result.nodeModules.length);
   }
 
   return result;
@@ -360,7 +359,6 @@ export async function scanForNodeModules(
 
 /**
  * Calculate sizes for all pending node_modules entries in parallel.
- * Use this after a lazy scan to populate size information.
  */
 export async function calculatePendingSizes(
   nodeModules: NodeModulesInfo[],
@@ -388,7 +386,6 @@ export async function calculatePendingSizes(
         if (onProgress) {
           onProgress(completed, total);
         }
-        // Return item with error marker
         return {
           ...pendingItem,
           sizeFormatted: 'error',
