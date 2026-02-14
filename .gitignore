@@ -37,6 +37,8 @@ coverage/
 *.temp
 .cache/
 
+release.sh
+
 # Test fixtures (if any)
 test/fixtures/**/node_modules/
 
