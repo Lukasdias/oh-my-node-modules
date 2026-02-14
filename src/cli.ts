@@ -2,7 +2,7 @@
 import { Command } from 'commander';
 import { intro, outro, spinner, multiselect, confirm, isCancel, cancel } from '@clack/prompts';
 import pc from 'picocolors';
-import { scanForNodeModules, loadIgnorePatterns } from './scanner.js';
+import { scanForNodeModules, loadIgnorePatterns, calculatePendingSizes } from './scanner.js';
 import { deleteSelectedNodeModules, selectBySize } from './deletion.js';
 import { sortNodeModules, calculateStatistics, formatBytes } from './utils.js';
 import type { NodeModulesInfo } from './types.js';
@@ -22,9 +22,12 @@ function getVersion(): string {
 }
 
 function formatItem(item: NodeModulesInfo): string {
-  const size = pc.cyan(item.sizeFormatted.padStart(8));
+  const isPending = (item as NodeModulesInfo & { isPending?: boolean }).isPending;
+  const size = isPending 
+    ? pc.yellow('  (...)  ')
+    : pc.cyan(item.sizeFormatted.padStart(8));
   const age = pc.gray(item.lastModifiedFormatted);
-  const warning = item.sizeCategory === 'huge' ? pc.red(' ⚠') : '';
+  const warning = !isPending && item.sizeCategory === 'huge' ? pc.red(' ⚠') : '';
   return `${size}  ${item.projectName}${warning}  [${age}]`;
 }
 
@@ -36,11 +39,17 @@ async function interactiveMode(rootPath: string) {
   
   try {
     const excludePatterns = await loadIgnorePatterns();
+    
+    // Use lazy mode for immediate feedback - show node_modules list ASAP
     const result = await scanForNodeModules({
       rootPath,
       excludePatterns,
       followSymlinks: false,
-    });
+    }, (_progress, found) => {
+      if (found > 0) {
+        s.message(`Scanning... found ${found} node_modules`);
+      }
+    }, true); // true = lazy mode
     
     s.stop(`Found ${result.nodeModules.length} node_modules directories`);
     
@@ -50,6 +59,24 @@ async function interactiveMode(rootPath: string) {
     }
     
     let items = sortNodeModules(result.nodeModules, 'size-desc');
+    
+    // Show initial list while calculating sizes in background
+    console.log(`\n${pc.gray('Calculating sizes...')}`);
+    console.log(`${pc.gray('Projects sorted by size:')}\n`);
+    
+    // Calculate sizes in background with progress
+    const sizeSpinner = spinner();
+    sizeSpinner.start('Calculating directory sizes...');
+    
+    items = await calculatePendingSizes(items, (completed, total) => {
+      sizeSpinner.message(`Calculating sizes... ${completed}/${total}`);
+    });
+    
+    sizeSpinner.stop(`Calculated sizes for ${items.length} directories`);
+    
+    // Re-sort after sizes are calculated
+    items = sortNodeModules(items, 'size-desc');
+    
     const stats = calculateStatistics(items);
     console.log(`\n${pc.gray('Total:')} ${pc.white(stats.totalSizeFormatted)} across ${pc.white(String(stats.totalProjects))} projects`);
     console.log(`${pc.gray('Stale:')} ${pc.yellow(String(stats.staleCount))} directories > 90 days old\n`);
@@ -84,7 +111,7 @@ async function interactiveMode(rootPath: string) {
         continue;
       }
       
-      const bytesToDelete = selectedIndices.reduce((sum, idx) => sum + items[idx].sizeBytes, 0);
+      const bytesToDelete = selectedIndices.reduce((sum: number, idx: number) => sum + items[idx].sizeBytes, 0);
       
       const confirmDelete = await confirm({
         message: `Delete ${selectedIndices.length} directories (${formatBytes(bytesToDelete)})?`,
@@ -185,14 +212,14 @@ async function autoDeleteMode(rootPath: string, minSize?: string, dryRun: boolea
       }
     }
     
-    const selected = items.filter(i => i.selected);
+    const selected = items.filter((i: NodeModulesInfo) => i.selected);
     
     if (selected.length === 0) {
       console.log(pc.yellow('No directories match the criteria.'));
       return;
     }
     
-    const bytesToDelete = selected.reduce((sum, item) => sum + item.sizeBytes, 0);
+    const bytesToDelete = selected.reduce((sum: number, item: NodeModulesInfo) => sum + item.sizeBytes, 0);
     
     console.log(`\n${dryRun ? pc.yellow('[DRY RUN]') : pc.red('Will delete:')}`);
     console.log(`${selected.length} directories (${formatBytes(bytesToDelete)})\n`);
@@ -241,7 +268,7 @@ program
   .name('onm')
   .description('Find and clean up node_modules directories')
   .version(getVersion())
-  .argument('[path]', 'Directory to scan', process.cwd())
+  .argument('<path>', 'Directory to scan')
   .option('--scan', 'quick scan mode (no interactive UI)')
   .option('--auto', 'auto-delete mode with filters')
   .option('--min-size <size>', 'minimum size in bytes for auto mode')

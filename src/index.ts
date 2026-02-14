@@ -26,6 +26,7 @@ export type {
   SizeCategory,
   SortOption,
   ScanOptions,
+  ScanResult,
   DeleteOptions,
   DeletionResult,
   DeletionDetail,
@@ -36,7 +37,7 @@ export type {
 } from './types.js';
 
 // Core functions
-export { scanForNodeModules, analyzeNodeModules, quickScan, loadIgnorePatterns, loadFavorites, isNodeModulesInUse } from './scanner.js';
+export { scanForNodeModules, analyzeNodeModules, quickScan, loadIgnorePatterns, loadFavorites, isNodeModulesInUse, updateNodeModulesSize, calculatePendingSizes } from './scanner.js';
 export { deleteSelectedNodeModules, generateDeletionPreview, generateJSONReport, selectBySize, selectByAge, selectAll, invertSelection } from './deletion.js';
 export {
   formatBytes,

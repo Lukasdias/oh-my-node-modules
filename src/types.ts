@@ -54,6 +54,12 @@ export interface NodeModulesInfo {
   
   /** Size category for color coding */
   sizeCategory: SizeCategory;
+  
+  /** Whether size calculation is still pending (lazy mode) */
+  isPending?: boolean;
+  
+  /** Whether the size was calculated using native commands */
+  isNativeCalculation?: boolean;
 }
 
 /** 
@@ -81,6 +87,18 @@ export type SortOption =
   | 'name-desc'      // Alphabetical Z-A
   | 'packages-desc'  // Most packages first
   | 'packages-asc';  // Fewest packages first
+
+/**
+ * Result of a directory scan operation.
+ */
+export interface ScanResult {
+  /** Discovered node_modules entries */
+  nodeModules: NodeModulesInfo[];
+  /** Number of directories scanned */
+  directoriesScanned: number;
+  /** Any errors encountered during scanning */
+  errors: string[];
+}
 
 /**
  * Configuration options for the scanning process.
