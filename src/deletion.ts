@@ -13,10 +13,14 @@
  */
 
 import { promises as fs } from 'fs';
-import { join } from 'path';
+import { join, resolve } from 'path';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import type { NodeModulesInfo, DeleteOptions, DeletionResult, DeletionDetail } from './types.js';
 import { formatBytes, fileExists } from './utils.js';
 import { isNodeModulesInUse } from './scanner.js';
+
+const execAsync = promisify(exec);
 
 /**
  * Delete selected node_modules directories.
@@ -129,12 +133,29 @@ async function deleteNodeModules(
 
     // Perform deletion (or simulate)
     if (options.dryRun) {
-      // In dry run, just simulate success
       detail.success = true;
     } else {
-      // Actually delete the directory
-      await fs.rm(nodeModules.path, { recursive: true, force: true });
-      detail.success = true;
+      try {
+        if (options.force) {
+          await forceDelete(nodeModules.path);
+        } else {
+          await fs.rm(nodeModules.path, { recursive: true, force: true });
+        }
+        detail.success = true;
+      } catch (rmError) {
+        const errorCode = (rmError as NodeJS.ErrnoException).code;
+        const errorMessage = (rmError as Error).message;
+        
+        if (errorCode === 'EPERM' || errorCode === 'EACCES') {
+          detail.error = 'Permission denied - run as Administrator or check file permissions';
+        } else if (errorCode === 'EBUSY') {
+          detail.error = 'Directory in use - close any programs using these files';
+        } else if (errorMessage?.includes('ENOTEMPTY')) {
+          detail.error = 'Directory not empty - may contain read-only files. Try using --force';
+        } else {
+          detail.error = errorMessage || 'Unknown error during deletion';
+        }
+      }
     }
 
     detail.durationMs = Date.now() - startTime;
@@ -144,6 +165,81 @@ async function deleteNodeModules(
   }
 
   return detail;
+}
+
+/**
+ * Force delete a directory - handles read-only files and long paths on Windows.
+ * Falls back to native commands if fs.rm fails.
+ */
+async function forceDelete(dirPath: string): Promise<void> {
+  const isWindows = process.platform === 'win32';
+  
+  try {
+    // First try normal deletion
+    await fs.rm(dirPath, { recursive: true, force: true });
+    return;
+  } catch {
+    // If that fails, try force approach
+  }
+  
+  // Strategy 1: Make all files writable, then delete
+  try {
+    await makeWritableRecursive(dirPath);
+    await fs.rm(dirPath, { recursive: true, force: true });
+    return;
+  } catch {
+    // If that fails, try native command
+  }
+  
+  // Strategy 2: Use native system command
+  try {
+    if (isWindows) {
+      // Use Windows rd command with /s (recursive) /q (quiet)
+      // Use UNC prefix for long paths
+      const windowsPath = dirPath.length > 240 ? `\\\\?\\${resolve(dirPath)}` : dirPath;
+      await execAsync(`rd /s /q "${windowsPath}"`, { timeout: 30000 });
+    } else {
+      // Use rm -rf on Unix
+      await execAsync(`rm -rf "${dirPath}"`, { timeout: 30000 });
+    }
+    return;
+  } catch {
+    // Last resort: rename then delete
+  }
+  
+  // Strategy 3: Rename to temp name, then delete (works when files are locked)
+  const tempPath = `${dirPath}.old.${Date.now()}`;
+  await fs.rename(dirPath, tempPath);
+  try {
+    await fs.rm(tempPath, { recursive: true, force: true });
+  } catch {
+    // Leave it for cleanup later
+  }
+}
+
+/**
+ * Recursively make all files and directories writable.
+ */
+async function makeWritableRecursive(dirPath: string): Promise<void> {
+  try {
+    const entries = await fs.readdir(dirPath, { withFileTypes: true });
+    
+    for (const entry of entries) {
+      const fullPath = join(dirPath, entry.name);
+      
+      if (entry.isDirectory()) {
+        await makeWritableRecursive(fullPath);
+      }
+      
+      // Make writable (777 for Unix, clears read-only for Windows)
+      await fs.chmod(fullPath, 0o777).catch(() => {});
+    }
+    
+    // Make directory itself writable
+    await fs.chmod(dirPath, 0o777).catch(() => {});
+  } catch {
+    // Ignore errors during permission changes
+  }
 }
 
 /**
@@ -159,19 +255,19 @@ async function deleteNodeModules(
  * @param path - Path to verify
  * @returns True if it looks like a valid node_modules
  */
-async function verifyNodeModules(path: string): Promise<boolean> {
+async function verifyNodeModules(dirPath: string): Promise<boolean> {
   try {
-    // Check name
-    const parts = path.split('/');
-    if (parts[parts.length - 1] !== 'node_modules') {
+    // Check name - use basename to handle both / and \ separators
+    const baseName = dirPath.replace(/\\/g, '/').split('/').pop();
+    if (baseName !== 'node_modules') {
       return false;
     }
 
     // Check it has contents (not empty)
-    const entries = await fs.readdir(path);
+    const entries = await fs.readdir(dirPath);
     let hasSubdirs = false;
     for (const entry of entries) {
-      const entryPath = join(path, entry);
+      const entryPath = join(dirPath, entry);
       try {
         const stats = await fs.stat(entryPath);
         if (stats.isDirectory()) {
@@ -184,7 +280,8 @@ async function verifyNodeModules(path: string): Promise<boolean> {
     }
 
     // Parent should have package.json
-    const parentPath = path.replace(/\/node_modules$/, '').replace(/\\node_modules$/, '');
+    const normalizedPath = dirPath.replace(/\\/g, '/');
+    const parentPath = normalizedPath.replace(/\/node_modules$/, '');
     const hasPackageJson = await fileExists(join(parentPath, 'package.json'));
 
     return hasSubdirs || hasPackageJson;

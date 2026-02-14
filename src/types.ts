@@ -131,9 +131,12 @@ export interface ScanOptions {
 export interface DeleteOptions {
   /** Whether to perform a dry run (don't actually delete) */
   dryRun: boolean;
-  
+
   /** Whether to skip confirmation prompts */
   yes: boolean;
+
+  /** Whether to force delete (handle read-only files, long paths on Windows) */
+  force: boolean;
   
   /** Whether to check for running processes before deleting */
   checkRunningProcesses: boolean;

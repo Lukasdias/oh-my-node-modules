@@ -31,7 +31,7 @@ function formatItem(item: NodeModulesInfo): string {
   return `${size}  ${item.projectName}${warning}  [${age}]`;
 }
 
-async function interactiveMode(rootPath: string) {
+async function interactiveMode(rootPath: string, force: boolean = false) {
   intro(pc.cyan('oh-my-node-modules'));
   
   const s = spinner();
@@ -129,11 +129,25 @@ async function interactiveMode(rootPath: string) {
         const result = await deleteSelectedNodeModules(items, {
           dryRun: false,
           yes: true,
+          force,
           checkRunningProcesses: false,
           showProgress: false,
         });
         
         ds.stop(`Deleted ${result.successful}/${result.totalAttempted} directories`);
+        
+        // Show errors for failed deletions
+        const failedDeletions = result.details.filter(d => !d.success && d.error);
+        if (failedDeletions.length > 0) {
+          console.log(pc.red(`\nFailed to delete ${failedDeletions.length} directories:`));
+          for (const detail of failedDeletions.slice(0, 5)) {
+            console.log(pc.red(`  • ${detail.nodeModules.projectName}: ${detail.error}`));
+          }
+          if (failedDeletions.length > 5) {
+            console.log(pc.red(`  ... and ${failedDeletions.length - 5} more`));
+          }
+        }
+        
         outro(pc.green(`Freed ${result.formattedBytesFreed}`));
         return;
       }
@@ -189,7 +203,7 @@ async function quickScanMode(rootPath: string, json: boolean) {
   }
 }
 
-async function autoDeleteMode(rootPath: string, minSize?: string, dryRun: boolean = false) {
+async function autoDeleteMode(rootPath: string, minSize?: string, dryRun: boolean = false, force: boolean = false) {
   const s = spinner();
   s.start('Scanning...');
   
@@ -246,8 +260,9 @@ async function autoDeleteMode(rootPath: string, minSize?: string, dryRun: boolea
       ds.start('Deleting...');
       
       const result = await deleteSelectedNodeModules(items, {
-        dryRun: false,
+        dryRun,
         yes: true,
+        force,
         checkRunningProcesses: false,
         showProgress: false,
       });
@@ -273,14 +288,15 @@ program
   .option('--auto', 'auto-delete mode with filters')
   .option('--min-size <size>', 'minimum size in bytes for auto mode')
   .option('--dry-run', 'simulate deletion without actually deleting')
+  .option('--force', 'force delete (handles read-only files and long paths)')
   .option('--json', 'output as JSON')
   .action(async (path: string, options) => {
     if (options.scan) {
       await quickScanMode(path, options.json);
     } else if (options.auto) {
-      await autoDeleteMode(path, options.minSize, options.dryRun);
+      await autoDeleteMode(path, options.minSize, options.dryRun, options.force);
     } else {
-      await interactiveMode(path);
+      await interactiveMode(path, options.force);
     }
   });
 
