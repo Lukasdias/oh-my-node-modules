@@ -17,7 +17,7 @@ npm install -g oh-my-node-modules
 ### Interactive mode
 
 ```bash
-onm                    # Start in current directory
+onm .                  # Start in current directory
 onm ~/projects         # Scan specific directory
 ```
 
@@ -37,26 +37,36 @@ Keyboard shortcuts:
 
 ```bash
 # Quick scan report
-onm --scan
+onm --scan .
 
 # JSON output
-onm --scan --json
+onm --scan --json .
 
 # Auto-delete large node_modules
-onm --auto --min-size 500mb --yes
+onm --auto --min-size 500mb --yes .
 
 # Preview what would be deleted
-onm --auto --min-size 1gb --dry-run
+onm --auto --min-size 1gb --dry-run .
 ```
 
 ## Features
 
+- **Fast scanning** - Parallel directory traversal with native system commands
 - Interactive terminal UI
 - Color-coded sizes (red >1GB, yellow >500MB)
 - Multi-select with keyboard shortcuts
 - Safe deletion with dry-run mode
 - Filter by project name or path
 - Shows last modified date
+
+## Performance
+
+oh-my-node-modules uses multiple optimization strategies for speed:
+
+1. **Parallel scanning** - Multiple directories scanned concurrently
+2. **Native size calculation** - Uses `du` (Unix) or `dir` (Windows) for fast size calculation
+3. **Lazy loading** - Shows results immediately while calculating sizes in background
+4. **Worker threads** - CPU-intensive operations run in parallel without blocking
 
 ## Development
 
