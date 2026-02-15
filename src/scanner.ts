@@ -258,6 +258,12 @@ export async function scanForNodeModules(
       // Use basename to handle trailing slashes (fdir adds them)
       if (basename(path) !== 'node_modules') return false;
       
+      // CRITICAL: Skip nested node_modules (e.g., node_modules/foo/node_modules)
+      // These are dependencies, not projects
+      const normalizedPath = path.replace(/\\/g, '/');
+      const parentDir = dirname(normalizedPath);
+      if (parentDir.includes('node_modules')) return false;
+      
       // Get project path (parent of node_modules)
       const projectPath = dirname(path);
       
@@ -481,7 +487,15 @@ export async function quickScan(rootPath: string): Promise<Array<{
     .withDirs()
     .withFullPaths()
     .filter((path, isDirectory) => {
-      return isDirectory && basename(path) === 'node_modules';
+      if (!isDirectory) return false;
+      if (basename(path) !== 'node_modules') return false;
+      
+      // Skip nested node_modules (dependencies, not projects)
+      const normalizedPath = path.replace(/\\/g, '/');
+      const parentDir = dirname(normalizedPath);
+      if (parentDir.includes('node_modules')) return false;
+      
+      return true;
     })
     .crawl(rootPath);
 

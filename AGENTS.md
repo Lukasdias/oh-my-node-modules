@@ -1,267 +1,230 @@
 # AGENTS.md - oh-my-node-modules
 
-Architecture overview and development guide for AI assistants working on this codebase.
+Guidelines for AI assistants working on this codebase.
 
-## Overview
+## Build & Development Commands
 
-**oh-my-node-modules** is a TUI CLI tool for visualizing and cleaning up node_modules directories. It combines:
-- **Ink**: React-based terminal UI framework
-- **@clack/prompts**: Interactive prompts for CLI mode
-- **TypeScript**: Type-safe development
+```bash
+# Development
+bun run dev              # Watch mode with hot reload
+bun run start            # Run compiled version
 
-## Project Structure
+# Building
+bun run build            # Build to dist/ (ESM + types)
+bun run clean            # Remove dist/
 
-```
-src/
-├── types.ts          # Core type definitions (interfaces, types, constants)
-├── utils.ts          # Pure utility functions (formatting, sorting, filtering)
-├── scanner.ts        # Discovery and analysis logic
-├── deletion.ts       # Safe deletion operations
-├── components/       
-│   └── index.tsx     # Ink UI components (Header, List, Footer, etc.)
-├── app.tsx           # Main application component with state management
-├── cli.tsx           # CLI entry point and argument parsing
-└── index.ts          # Public API exports
-```
+# Testing (Bun native test runner)
+bun test                 # Run all tests
+bun test --watch         # Watch mode
+bun test <pattern>       # Run single test file (e.g., bun test utils)
 
-## Key Concepts
-
-### Data Flow
-
-```
-Scanner → NodeModulesInfo[] → State → Components → Render
-                ↓
-          Utils (sort/filter)
+# Type Checking & Linting
+bun run typecheck        # TypeScript strict mode check
+bun run lint             # Alias for typecheck
 ```
 
-1. **Scanner** discovers node_modules and creates `NodeModulesInfo` objects
-2. **State** (React hooks) holds the current application state
-3. **Utils** provide pure functions for sorting, filtering, formatting
-4. **Components** render the UI based on state
-5. **User Input** updates state, triggering re-render
+## Code Style Guidelines
 
-### Core Types
+### TypeScript
+- **Strict mode**: `noImplicitAny`, `strictNullChecks`, `strictFunctionTypes` enabled
+- **No `any`**: Use proper types or `unknown` with type guards
+- **Explicit returns**: Always define return types on exported functions
+- **Unused variables**: Compiler errors on unused locals/parameters
 
-**NodeModulesInfo**: Central data structure representing a node_modules directory
+### Imports
 ```typescript
-interface NodeModulesInfo {
-  path: string;              // Absolute path
-  projectPath: string;       // Parent project path
-  projectName: string;       // From package.json or directory name
-  sizeBytes: number;         // Total size
-  sizeFormatted: string;     // Human readable
-  packageCount: number;      // Top-level packages
-  totalPackageCount: number; // All packages (nested)
-  lastModified: Date;
-  lastModifiedFormatted: string;
-  selected: boolean;         // For deletion
-  isFavorite: boolean;       // Never suggest deleting
-  ageCategory: AgeCategory;  // 'fresh' | 'recent' | 'old' | 'stale'
-  sizeCategory: SizeCategory; // 'small' | 'medium' | 'large' | 'huge'
+// ESM requires .js extensions
+import { foo } from './utils.js';
+import type { Bar } from './types.js';
+
+// Node built-ins (no extension)
+import { promises as fs } from 'fs';
+import { join } from 'path';
+
+// External packages (no extension)
+import { fdir } from 'fdir';
+import pLimit from 'p-limit';
+```
+
+### Naming Conventions
+- **Files**: kebab-case (`size-worker.ts`, `utils.ts`)
+- **Functions**: camelCase (`calculateSize`, `formatBytes`)
+- **Types/Interfaces**: PascalCase (`NodeModulesInfo`, `ScanOptions`)
+- **Constants**: UPPER_SNAKE_CASE for true constants (`SIZE_THRESHOLDS`)
+- **Boolean props**: Prefix with verb (`isPending`, `hasNodeModules`)
+
+### Function Patterns
+```typescript
+// Pure functions preferred (no side effects)
+export function sortNodeModules(
+  items: NodeModulesInfo[], 
+  sortBy: SortOption
+): NodeModulesInfo[] {
+  return [...items].sort(/* ... */);  // Immutable - return new array
+}
+
+// Async with proper error handling
+export async function analyzeNodeModules(
+  path: string
+): Promise<NodeModulesInfo> {
+  try {
+    const stats = await fs.stat(path);
+    return { /* ... */ };
+  } catch (error) {
+    throw new Error(`Failed to analyze ${path}: ${error instanceof Error ? error.message : 'Unknown'}`);
+  }
 }
 ```
 
-### State Management
-
-The app uses React hooks for state management:
-
+### Error Handling
 ```typescript
-const [state, setState] = useState<AppState>({
-  nodeModules: [],           // All discovered items
-  selectedIndex: 0,          // Current focus
-  sortBy: 'size-desc',       // Current sort
-  filterQuery: '',           // Search filter
-  isScanning: false,
-  isDeleting: false,
-  scanProgress: 0,
-  sessionBytesReclaimed: 0,
-  showHelp: false,
-});
-```
-
-State updates are **immutable** - always create new objects/arrays.
-
-### Keyboard Handling
-
-Input is handled via Ink's `useInput` hook:
-
-```typescript
-useInput((input, key) => {
-  if (key.upArrow) navigateUp();
-  if (input === 'd') promptDelete();
-  // ... etc
-});
-```
-
-**Key Design**: Input handlers check UI state first (help, confirm dialogs) to ensure proper modal behavior.
-
-## Common Tasks
-
-### Adding a New Sort Option
-
-1. Add to `SortOption` type in `types.ts`
-2. Add sort logic in `sortNodeModules()` in `utils.ts`
-3. Add label in `getSortLabel()` in `components/index.tsx`
-
-### Adding a New Filter
-
-1. Create filter function in `utils.ts`
-2. Add keyboard shortcut in `app.tsx` `useInput`
-3. Update help text in `Help` component
-
-### Adding a New Keyboard Shortcut
-
-1. Add handler in `app.tsx` `useInput`
-2. Update `Footer` component to show shortcut
-3. Update `Help` component with documentation
-
-### Modifying the Scanner
-
-Scanner is in `scanner.ts`. Key functions:
-- `scanForNodeModules()`: Main entry point
-- `analyzeNodeModules()`: Detailed analysis of single node_modules
-- `calculateDirectorySize()`: Recursive size calculation
-
-Scanner is **async** and reports progress via callback.
-
-### Modifying Deletion Logic
-
-Deletion is in `deletion.ts`. Key functions:
-- `deleteSelectedNodeModules()`: Main entry point
-- `deleteNodeModules()`: Single deletion with safety checks
-- `verifyNodeModules()`: Validates before deletion
-
-Safety checks:
-1. Path ends with 'node_modules'
-2. Directory exists
-3. Not in use (if check enabled)
-4. Looks like valid node_modules
-
-## Architecture Patterns
-
-### Pure Functions
-
-Utility functions in `utils.ts` are pure (no side effects):
-```typescript
-// Good: returns new array, doesn't mutate
-export function sortNodeModules(items: NodeModulesInfo[], sortBy: SortOption): NodeModulesInfo[] {
-  return [...items].sort(/* ... */);
+// Always wrap error messages with context
+catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  result.errors.push(`Error analyzing ${path}: ${message}`);
 }
+
+// Never suppress errors silently
+// Bad: catch (e) { }
+// Good: catch (e) { logError(e); throw e; }
 ```
 
-### Immutable Updates
-
-State updates always create new objects:
+### State Management (React/Ink)
 ```typescript
+// Immutable updates only
 setState(prev => ({
   ...prev,
   nodeModules: prev.nodeModules.map(item => 
     item.path === targetPath ? { ...item, selected: true } : item
   ),
 }));
+
+// Never mutate state directly
+// Bad: state.nodeModules[0].selected = true;
 ```
 
-### Async Operations
+## Project Structure
 
-Long-running operations (scan, delete) use async/await:
+```
+src/
+├── types.ts           # All TypeScript interfaces, types, constants
+├── utils.ts           # Pure utility functions (testable, no side effects)
+├── scanner.ts         # Directory discovery (uses fdir for speed)
+├── size-worker.ts     # Worker threads for parallel size calculation
+├── deletion.ts        # Safe deletion logic with verification
+├── cli.tsx            # CLI entry point, argument parsing
+├── app.tsx            # Ink TUI app with React state
+├── components/        # React/Ink UI components
+│   └── index.tsx
+└── index.ts           # Public API exports
+
+tests/
+├── utils.test.ts      # Unit tests for pure functions
+├── scanner.test.ts    # Scanner integration tests
+└── deletion.test.ts   # Deletion logic tests
+```
+
+## Testing Guidelines
+
 ```typescript
-const result = await scanForNodeModules(options, onProgress);
+import { describe, it, expect } from 'bun:test';
+
+describe('feature', () => {
+  it('does something specific', () => {
+    const result = functionToTest(input);
+    expect(result).toBe(expected);
+    expect(result).toHaveLength(2);
+    expect(result.map(i => i.name)).toContain('item');
+  });
+});
 ```
 
-Progress callbacks keep UI responsive.
+- Test pure functions in `utils.ts` directly
+- Use temp directories in `tmpdir()` for file system tests
+- Clean up temp files in `afterEach`
+- Mock external dependencies, test logic in isolation
 
-### Error Handling
+## Performance Patterns
 
-Errors are caught and displayed in the UI:
+### Fast Directory Operations
 ```typescript
-try {
-  await operation();
-} catch (error) {
-  setErrorMessage(error instanceof Error ? error.message : 'Unknown error');
-}
+// Use fdir for discovery (1M files in <1s)
+import { fdir } from 'fdir';
+
+const crawler = new fdir()
+  .withDirs()
+  .withFullPaths()
+  .filter((path, isDirectory) => basename(path) === 'node_modules')
+  .crawl(rootPath);
+
+const paths = await crawler.withPromise();
 ```
 
-## Performance Considerations
+### Parallel Processing
+```typescript
+// Use worker threads for CPU-intensive work
+import { calculateSizeWithWorker } from './size-worker.js';
 
-1. **Virtual Scrolling**: List component only renders visible items
-2. **Memoization**: `useMemo` for expensive calculations (statistics, sorting)
-3. **Debouncing**: Progress updates batched to avoid re-render storms
-4. **Lazy Loading**: Scanner yields control periodically
+// Use p-limit for controlled concurrency
+import pLimit from 'p-limit';
+const limit = pLimit(8);  // 8 concurrent on Windows, 4 on Unix
 
-## Testing
+const results = await Promise.all(
+  items.map(item => limit(() => processItem(item)))
+);
+```
 
-Tests use Vitest. Run with:
+### Platform-Specific Concurrency
+```typescript
+const CONCURRENCY = process.platform === 'win32' ? 8 : 4;
+```
+
+## Key Dependencies
+
+- **fdir**: Ultra-fast directory crawling (replaces manual BFS)
+- **p-limit**: Concurrency limiting for parallel operations
+- **@clack/prompts**: Interactive CLI prompts
+- **commander**: CLI argument parsing
+- **picocolors**: Terminal colors
+- **zod**: Runtime type validation
+
+## Common Tasks
+
+### Adding a New Feature
+1. Add types to `types.ts`
+2. Implement logic in appropriate module (scanner/utils/deletion)
+3. Add tests in `tests/<module>.test.ts`
+4. Update CLI in `cli.tsx` if user-facing
+5. Run `bun run typecheck && bun test`
+
+### Modifying the Scanner
+- Discovery: Use `fdir` (already implemented)
+- Size calculation: Use `calculateSizeWithWorker()`
+- Progress: Call `onProgress(percent, count)` periodically
+- Filters: Apply in fdir filter or post-discovery
+
+### Error Messages
+Include context for debugging:
+```typescript
+// Good
+`Error analyzing ${path}: ${message}`
+
+// Bad
+'Analysis failed'
+```
+
+## Constraints
+
+- **No shell commands on Windows**: Avoid `exec('dir /s')` - use worker threads
+- **ESM only**: Always use `.js` extensions in imports
+- **Node 20+**: Use modern APIs (fs.promises, etc.)
+- **Cross-platform**: Test paths work on Windows (`\\`) and Unix (`/`)
+- **Strict TypeScript**: Zero tolerance for `any` or unchecked nulls
+
+## Before Submitting
+
 ```bash
-npm test
+bun run typecheck        # Must pass
+bun test                 # All tests must pass
+bun run build            # Must compile without errors
 ```
-
-Test pure functions in `utils.ts` directly. For components, use Ink's testing utilities.
-
-## Code Style
-
-- **TypeScript strict mode**: No `any`, proper null checks
-- **Named exports**: Prefer `export function` over default exports
-- **JSDoc comments**: Explain "why" not just "what"
-- **File extensions**: Use `.js` in imports (ESM requirement)
-
-## Build & Publish
-
-```bash
-# Build
-npm run build
-
-# Test
-npm run test:run
-
-# Type check
-npm run typecheck
-
-# Publish
-npm run prepublishOnly
-npm publish
-```
-
-## Dependencies
-
-**Runtime:**
-- `ink`: React for terminals
-- `@clack/prompts`: Interactive prompts
-- `zod`: Runtime validation
-- `react`: Peer dependency
-
-**Development:**
-- `typescript`: Type checking
-- `bunchee`: Building
-- `vitest`: Testing
-- `@types/*`: Type definitions
-
-## CLI Modes
-
-The app supports three modes:
-
-1. **Interactive TUI** (default): Full Ink-based UI with keyboard navigation
-2. **Quick Scan** (`--scan`): Non-interactive summary report
-3. **Auto Delete** (`--auto`): Non-interactive batch deletion
-
-Mode is determined by CLI arguments in `cli.tsx`.
-
-## Safety Features
-
-1. **Path verification**: Must end with 'node_modules'
-2. **In-use detection**: Checks for lock files
-3. **Confirmation**: Required unless `--yes`
-4. **Dry run**: `--dry-run` simulates without deleting
-5. **Favorites**: Projects in `~/.onmfavorites` are protected
-
-## Cross-Platform Support
-
-- Uses Node.js `fs.promises` for file operations
-- Uses `path.join` for path manipulation
-- Avoids platform-specific features
-- Works on macOS, Linux, Windows (WSL)
-
-## Questions?
-
-- Check `README.md` for user documentation
-- Check this file for architecture questions
-- Look at existing code for patterns

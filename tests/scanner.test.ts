@@ -321,3 +321,66 @@ describe('shouldExcludePath', () => {
     expect(shouldExcludePath('/test/node_modules', [])).toBe(false);
   });
 });
+
+// ============================================
+// Nested node_modules exclusion Tests
+// ============================================
+
+describe('nested node_modules filtering', () => {
+  let testDir: string;
+
+  beforeEach(() => {
+    testDir = mkdtempSync(join(tmpdir(), 'onm-nested-test-'));
+  });
+
+  afterEach(() => {
+    cleanupTestDir(testDir);
+  });
+
+  it('excludes nested node_modules inside dependencies', async () => {
+    // Create structure: project/node_modules/lodash/node_modules/nested-dep
+    const projectDir = join(testDir, 'project');
+    mkdirSync(join(projectDir, 'node_modules', 'lodash', 'node_modules', 'nested-dep'), { recursive: true });
+    writeFileSync(join(projectDir, 'package.json'), JSON.stringify({ name: 'project' }));
+
+    const options: ScanOptions = {
+      rootPath: testDir,
+      excludePatterns: [],
+      followSymlinks: false,
+    };
+
+    const result = await scanForNodeModules(options);
+
+    // Should only find 1 node_modules (the project-level one)
+    expect(result.nodeModules).toHaveLength(1);
+    expect(result.nodeModules[0].projectName).toBe('project');
+    // fdir adds trailing slash, so check with or without
+    const expectedPath = join(projectDir, 'node_modules');
+    expect(result.nodeModules[0].path === expectedPath || result.nodeModules[0].path === expectedPath + '/').toBe(true);
+  });
+
+  it('finds multiple project-level node_modules', async () => {
+    // Create two projects
+    const project1 = join(testDir, 'project1');
+    const project2 = join(testDir, 'project2');
+    
+    mkdirSync(join(project1, 'node_modules', 'lodash'), { recursive: true });
+    writeFileSync(join(project1, 'package.json'), JSON.stringify({ name: 'project1' }));
+    
+    mkdirSync(join(project2, 'node_modules', 'react'), { recursive: true });
+    writeFileSync(join(project2, 'package.json'), JSON.stringify({ name: 'project2' }));
+
+    const options: ScanOptions = {
+      rootPath: testDir,
+      excludePatterns: [],
+      followSymlinks: false,
+    };
+
+    const result = await scanForNodeModules(options);
+
+    // Should find exactly 2 node_modules (project-level only)
+    expect(result.nodeModules).toHaveLength(2);
+    const names = result.nodeModules.map(n => n.projectName).sort();
+    expect(names).toEqual(['project1', 'project2']);
+  });
+});
