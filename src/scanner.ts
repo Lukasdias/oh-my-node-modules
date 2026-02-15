@@ -286,7 +286,8 @@ export async function scanForNodeModules(
   const nodeModulesPaths: string[] = await crawler.withPromise();
   
   // Strip trailing slashes from paths (fdir adds them)
-  const normalizedPaths = nodeModulesPaths.map(p => p.replace(/\/$/, ''));
+  // Handle both forward (/) and back (\) slashes for cross-platform compatibility
+  const normalizedPaths = nodeModulesPaths.map(p => p.replace(/[\\/]$/, ''));
   
   result.directoriesScanned = normalizedPaths.length;
   
@@ -505,7 +506,7 @@ export async function quickScan(rootPath: string): Promise<Array<{
   const nodeModulesPaths: string[] = await crawler.withPromise();
   
   // Strip trailing slashes from paths
-  const normalizedPaths = nodeModulesPaths.map(p => p.replace(/\/$/, ''));
+  const normalizedPaths = nodeModulesPaths.map(p => p.replace(/[\\/]$/, ''));
   
   const results: Array<{ path: string; projectPath: string; projectName: string; repoPath: string }> = [];
   
