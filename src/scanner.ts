@@ -285,14 +285,17 @@ export async function scanForNodeModules(
   // Get all node_modules paths quickly
   const nodeModulesPaths: string[] = await crawler.withPromise();
   
-  result.directoriesScanned = nodeModulesPaths.length;
+  // Strip trailing slashes from paths (fdir adds them)
+  const normalizedPaths = nodeModulesPaths.map(p => p.replace(/\/$/, ''));
+  
+  result.directoriesScanned = normalizedPaths.length;
   
   if (onProgress) {
-    onProgress(10, nodeModulesPaths.length);
+    onProgress(10, normalizedPaths.length);
   }
 
   // Convert to analysis tasks
-  const foundNodeModules = nodeModulesPaths.map(nodeModulesPath => ({
+  const foundNodeModules = normalizedPaths.map(nodeModulesPath => ({
     nodeModulesPath,
     projectPath: dirname(nodeModulesPath),
   }));
@@ -501,9 +504,12 @@ export async function quickScan(rootPath: string): Promise<Array<{
 
   const nodeModulesPaths: string[] = await crawler.withPromise();
   
+  // Strip trailing slashes from paths
+  const normalizedPaths = nodeModulesPaths.map(p => p.replace(/\/$/, ''));
+  
   const results: Array<{ path: string; projectPath: string; projectName: string; repoPath: string }> = [];
   
-  for (const nodeModulesPath of nodeModulesPaths) {
+  for (const nodeModulesPath of normalizedPaths) {
     const projectPath = dirname(nodeModulesPath);
     const packageJson = await readPackageJson(projectPath);
     const repoPath = await findRepoRoot(projectPath);

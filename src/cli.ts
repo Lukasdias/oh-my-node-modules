@@ -9,6 +9,7 @@ import type { NodeModulesInfo } from './types.js';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { isMainThread } from 'worker_threads';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -300,4 +301,7 @@ program
     }
   });
 
-program.parse();
+// Only parse CLI arguments in the main thread, not in worker threads
+if (isMainThread) {
+  program.parse();
+}
