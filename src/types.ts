@@ -57,9 +57,6 @@ export interface NodeModulesInfo {
   
   /** Whether size calculation is still pending (lazy mode) */
   isPending?: boolean;
-  
-  /** Whether the size was calculated using native commands */
-  isNativeCalculation?: boolean;
 }
 
 /** 

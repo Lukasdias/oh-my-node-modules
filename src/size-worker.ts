@@ -9,6 +9,7 @@
 import { Worker, isMainThread, parentPort, workerData } from 'worker_threads';
 import { promises as fs } from 'fs';
 import { join, basename } from 'path';
+import { fileURLToPath } from 'url';
 
 interface WorkerResult {
   path: string;
@@ -126,6 +127,9 @@ export function calculateSizeWithWorker(dirPath: string): Promise<{
   totalPackageCount: number;
 }> {
   return new Promise((resolve, reject) => {
+    // Get the current file path
+    const __filename = fileURLToPath(import.meta.url);
+    
     const worker = new Worker(__filename, {
       workerData: { path: dirPath },
     });

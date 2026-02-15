@@ -5,7 +5,7 @@
  * These are the easiest to test and most critical to get right.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'bun:test';
 import {
   formatBytes,
   parseSize,

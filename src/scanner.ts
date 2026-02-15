@@ -1,12 +1,13 @@
 /**
  * Optimized scanner module for discovering and analyzing node_modules directories
  * 
- * Uses sequential BFS for reliable directory discovery,
- * parallel processing only for size calculations.
+ * Uses fdir for ultra-fast directory crawling (1M files in <1s),
+ * worker threads for parallel size calculations.
  */
 
 import { promises as fs } from 'fs';
 import { join, basename, dirname } from 'path';
+import { fdir } from 'fdir';
 import pLimit from 'p-limit';
 import type { NodeModulesInfo, ScanOptions, ScanResult } from './types.js';
 import {
@@ -15,13 +16,12 @@ import {
   getSizeCategory,
   getAgeCategory,
   readPackageJson,
-  shouldExcludePath,
   fileExists,
 } from './utils.js';
-import { getFastDirectorySize } from './native-size.js';
+import { calculateSizeWithWorker } from './size-worker.js';
 
-// Concurrency limit for size calculations only
-const SIZE_CALCULATION_CONCURRENCY = 4;
+// Concurrency limits - higher on Windows for better performance
+const SIZE_CALCULATION_CONCURRENCY = process.platform === 'win32' ? 8 : 4;
 
 /**
  * Find the repo root by looking for .git directory.
@@ -54,9 +54,26 @@ function getAgeInDays(date: Date): number {
 }
 
 /**
- * Calculate directory size using JS fallback (iterative).
+ * Calculate directory size using worker threads for parallel processing.
  */
-async function calculateDirectorySizeFallback(dirPath: string): Promise<{
+async function calculateDirectorySizeAsync(dirPath: string): Promise<{
+  totalSize: number;
+  packageCount: number;
+  totalPackageCount: number;
+}> {
+  try {
+    // Use worker thread for calculation
+    return await calculateSizeWithWorker(dirPath);
+  } catch (error) {
+    // Fallback to simple calculation if worker fails
+    return calculateDirectorySizeSimple(dirPath);
+  }
+}
+
+/**
+ * Simple directory size calculation (fallback).
+ */
+async function calculateDirectorySizeSimple(dirPath: string): Promise<{
   totalSize: number;
   packageCount: number;
   totalPackageCount: number;
@@ -120,35 +137,6 @@ async function calculateDirectorySizeFallback(dirPath: string): Promise<{
 }
 
 /**
- * Calculate size using fastest available method.
- */
-async function calculateSizeWithFallback(dirPath: string): Promise<{
-  totalSize: number;
-  packageCount: number;
-  totalPackageCount: number;
-  isNative: boolean;
-}> {
-  // Try native size calculation first
-  const nativeResult = await getFastDirectorySize(dirPath);
-  
-  if (nativeResult.isNative && nativeResult.bytes > 0) {
-    return {
-      totalSize: nativeResult.bytes,
-      packageCount: nativeResult.packageCount,
-      totalPackageCount: nativeResult.totalPackageCount,
-      isNative: true,
-    };
-  }
-  
-  // Fallback to JS implementation
-  const fallbackResult = await calculateDirectorySizeFallback(dirPath);
-  return {
-    ...fallbackResult,
-    isNative: false,
-  };
-}
-
-/**
  * Analyze a single node_modules directory.
  */
 export async function analyzeNodeModules(
@@ -185,8 +173,8 @@ export async function analyzeNodeModules(
     } as NodeModulesInfo;
   }
   
-  // Calculate size (native or fallback)
-  const { totalSize, packageCount, totalPackageCount, isNative } = await calculateSizeWithFallback(nodeModulesPath);
+  // Calculate size using worker thread
+  const { totalSize, packageCount, totalPackageCount } = await calculateDirectorySizeAsync(nodeModulesPath);
 
   // Read project info
   const packageJson = await readPackageJson(projectPath);
@@ -213,7 +201,7 @@ export async function analyzeNodeModules(
     isFavorite: false,
     ageCategory,
     sizeCategory,
-    isNativeCalculation: isNative,
+    isPending: false,
   } as NodeModulesInfo;
 }
 
@@ -223,7 +211,7 @@ export async function analyzeNodeModules(
 export async function updateNodeModulesSize(
   info: NodeModulesInfo
 ): Promise<NodeModulesInfo> {
-  const { totalSize, packageCount, totalPackageCount, isNative } = await calculateSizeWithFallback(info.path);
+  const { totalSize, packageCount, totalPackageCount } = await calculateDirectorySizeAsync(info.path);
   
   return {
     ...info,
@@ -233,15 +221,14 @@ export async function updateNodeModulesSize(
     totalPackageCount,
     sizeCategory: getSizeCategory(totalSize),
     isPending: false,
-    isNativeCalculation: isNative,
   };
 }
 
 /**
- * Scan for node_modules directories.
+ * Scan for node_modules directories using fdir for ultra-fast discovery.
  * 
- * Uses sequential BFS for reliable discovery,
- * parallel processing only for size calculations.
+ * Uses fdir (1M files in <1s) for discovery,
+ * worker threads for parallel size calculations.
  */
 export async function scanForNodeModules(
   options: ScanOptions,
@@ -254,72 +241,57 @@ export async function scanForNodeModules(
     errors: [],
   };
 
-  const visitedPaths = new Set<string>();
-  const pathsToScan: Array<{ path: string; depth: number }> = [
-    { path: options.rootPath, depth: 0 },
-  ];
-
-  // Collect all node_modules paths first (fast)
-  const foundNodeModules: Array<{ nodeModulesPath: string; projectPath: string }> = [];
-
-  let processedCount = 0;
-  let totalEstimate = 1;
-
-  // Phase 1: Sequential BFS to find all node_modules directories
-  while (pathsToScan.length > 0) {
-    const { path: currentPath, depth } = pathsToScan.shift()!;
-
-    // Skip if already visited or exceeds max depth
-    if (visitedPaths.has(currentPath)) continue;
-    if (options.maxDepth !== undefined && depth > options.maxDepth) continue;
-    if (shouldExcludePath(currentPath, options.excludePatterns)) continue;
-
-    visitedPaths.add(currentPath);
-    result.directoriesScanned++;
-
-    try {
-      const entries = await fs.readdir(currentPath, { withFileTypes: true });
-      
-      // Check if current directory has node_modules
-      const hasNodeModules = entries.some(
-        entry => entry.isDirectory() && entry.name === 'node_modules'
-      );
-
-      if (hasNodeModules) {
-        const nodeModulesPath = join(currentPath, 'node_modules');
-        foundNodeModules.push({ nodeModulesPath, projectPath: currentPath });
-        
-        if (onProgress) {
-          onProgress(Math.min(100, Math.round((processedCount / totalEstimate) * 100)), foundNodeModules.length);
-        }
-      }
-
-      // Queue subdirectories for scanning
-      for (const entry of entries) {
-        if (
-          entry.isDirectory() &&
-          entry.name !== 'node_modules' &&
-          !entry.name.startsWith('.')
-        ) {
-          const subPath = join(currentPath, entry.name);
-          if (!shouldExcludePath(subPath, options.excludePatterns)) {
-            pathsToScan.push({ path: subPath, depth: depth + 1 });
-            totalEstimate++;
-          }
-        }
-      }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      result.errors.push(`Error scanning ${currentPath}: ${errorMessage}`);
-    }
-
-    processedCount++;
-    if (onProgress && foundNodeModules.length === 0) {
-      onProgress(Math.min(100, Math.round((processedCount / totalEstimate) * 100)), 0);
-    }
+  // Phase 1: Use fdir for ultra-fast node_modules discovery
+  if (onProgress) {
+    onProgress(5, 0);
   }
 
-  // Phase 2: Parallel size calculation
+  const rootPath = options.rootPath;
+  const maxDepth = options.maxDepth;
+  
+  const crawler = new fdir()
+    .withDirs()
+    .withFullPaths()
+    .filter((path, isDirectory) => {
+      // Only include directories named 'node_modules'
+      if (!isDirectory) return false;
+      // Use basename to handle trailing slashes (fdir adds them)
+      if (basename(path) !== 'node_modules') return false;
+      
+      // Get project path (parent of node_modules)
+      const projectPath = dirname(path);
+      
+      // Skip hidden directories (directories starting with . in the path)
+      const pathParts = projectPath.replace(rootPath, '').split(/[/\\]/);
+      const hasHiddenDir = pathParts.some(part => part.startsWith('.'));
+      if (hasHiddenDir) return false;
+      
+      // Check maxDepth
+      if (maxDepth !== undefined) {
+        const depth = pathParts.filter(p => p.length > 0).length;
+        if (depth > maxDepth) return false;
+      }
+      
+      return true;
+    })
+    .crawl(options.rootPath);
+
+  // Get all node_modules paths quickly
+  const nodeModulesPaths: string[] = await crawler.withPromise();
+  
+  result.directoriesScanned = nodeModulesPaths.length;
+  
+  if (onProgress) {
+    onProgress(10, nodeModulesPaths.length);
+  }
+
+  // Convert to analysis tasks
+  const foundNodeModules = nodeModulesPaths.map(nodeModulesPath => ({
+    nodeModulesPath,
+    projectPath: dirname(nodeModulesPath),
+  }));
+
+  // Phase 2: Parallel size calculation with controlled concurrency
   if (foundNodeModules.length > 0) {
     const sizeLimit = pLimit(SIZE_CALCULATION_CONCURRENCY);
     
@@ -338,6 +310,12 @@ export async function scanForNodeModules(
             }
           } else {
             result.nodeModules.push(info);
+          }
+          
+          // Report progress
+          if (onProgress) {
+            const progress = 10 + Math.round((result.nodeModules.length / foundNodeModules.length) * 90);
+            onProgress(progress, result.nodeModules.length);
           }
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
@@ -498,50 +476,30 @@ export async function quickScan(rootPath: string): Promise<Array<{
   projectName: string;
   repoPath: string;
 }>> {
+  // Use fdir for fast discovery
+  const crawler = new fdir()
+    .withDirs()
+    .withFullPaths()
+    .filter((path, isDirectory) => {
+      return isDirectory && basename(path) === 'node_modules';
+    })
+    .crawl(rootPath);
+
+  const nodeModulesPaths: string[] = await crawler.withPromise();
+  
   const results: Array<{ path: string; projectPath: string; projectName: string; repoPath: string }> = [];
-  const visitedPaths = new Set<string>();
-  const pathsToScan = [rootPath];
-
-  while (pathsToScan.length > 0) {
-    const currentPath = pathsToScan.pop()!;
+  
+  for (const nodeModulesPath of nodeModulesPaths) {
+    const projectPath = dirname(nodeModulesPath);
+    const packageJson = await readPackageJson(projectPath);
+    const repoPath = await findRepoRoot(projectPath);
     
-    if (visitedPaths.has(currentPath)) continue;
-    visitedPaths.add(currentPath);
-
-    try {
-      const entries = await fs.readdir(currentPath, { withFileTypes: true });
-      
-      const hasNodeModules = entries.some(
-        entry => entry.isDirectory() && entry.name === 'node_modules'
-      );
-
-      if (hasNodeModules) {
-        const projectPath = currentPath;
-        const nodeModulesPath = join(currentPath, 'node_modules');
-        const packageJson = await readPackageJson(projectPath);
-        const repoPath = await findRepoRoot(projectPath);
-        
-        results.push({
-          path: nodeModulesPath,
-          projectPath,
-          projectName: packageJson?.name || basename(projectPath),
-          repoPath,
-        });
-      }
-
-      // Add subdirectories
-      for (const entry of entries) {
-        if (
-          entry.isDirectory() &&
-          entry.name !== 'node_modules' &&
-          !entry.name.startsWith('.')
-        ) {
-          pathsToScan.push(join(currentPath, entry.name));
-        }
-      }
-    } catch {
-      // Skip directories we can't read
-    }
+    results.push({
+      path: nodeModulesPath,
+      projectPath,
+      projectName: packageJson?.name || basename(projectPath),
+      repoPath,
+    });
   }
 
   return results;
