@@ -16,6 +16,7 @@ import { promises as fs } from 'fs';
 import { join, resolve } from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import pLimit from 'p-limit';
 import type { NodeModulesInfo, DeleteOptions, DeletionResult, DeletionDetail } from './types.js';
 import { formatBytes, fileExists } from './utils.js';
 import { isNodeModulesInUse } from './scanner.js';
@@ -36,6 +37,9 @@ const execAsync = promisify(exec);
  * @param onProgress - Optional callback for progress updates
  * @returns Deletion results with statistics
  */
+// Concurrency for parallel deletion - higher on Windows for better performance
+const DELETION_CONCURRENCY = process.platform === 'win32' ? 4 : 3;
+
 export async function deleteSelectedNodeModules(
   nodeModules: NodeModulesInfo[],
   options: DeleteOptions,
@@ -52,19 +56,31 @@ export async function deleteSelectedNodeModules(
     details: [],
   };
 
-  for (let i = 0; i < selected.length; i++) {
-    const item = selected[i];
-    
-    if (onProgress) {
-      onProgress(i + 1, selected.length, item.projectName);
-    }
+  // Delete in parallel with limited concurrency for speed
+  const limit = pLimit(DELETION_CONCURRENCY);
+  let completed = 0;
 
-    const detail = await deleteNodeModules(item, options);
+  const deletionPromises = selected.map((item) =>
+    limit(async () => {
+      const detail = await deleteNodeModules(item, options);
+      
+      completed++;
+      if (onProgress) {
+        onProgress(completed, selected.length, item.projectName);
+      }
+      
+      return detail;
+    })
+  );
+
+  const details = await Promise.all(deletionPromises);
+  
+  // Aggregate results
+  for (const detail of details) {
     result.details.push(detail);
-
     if (detail.success) {
       result.successful++;
-      result.bytesFreed += item.sizeBytes;
+      result.bytesFreed += detail.nodeModules.sizeBytes;
     } else {
       result.failed++;
     }
