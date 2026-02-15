@@ -100,7 +100,9 @@ async function deleteNodeModules(
 
   try {
     // Safety check 1: Verify path ends with node_modules
-    if (!nodeModules.path.endsWith('node_modules')) {
+    // Handle both Windows (\) and Unix (/) path separators
+    const normalizedPath = nodeModules.path.replace(/\\/g, '/');
+    if (!normalizedPath.endsWith('node_modules') && !normalizedPath.endsWith('node_modules/')) {
       detail.error = 'Path does not appear to be a node_modules directory';
       detail.durationMs = Date.now() - startTime;
       return detail;

@@ -164,6 +164,42 @@ describe('deleteSelectedNodeModules', () => {
     expect(result.failed).toBe(1);
     expect(result.details[0].error).toContain('not appear to be a node_modules');
   });
+
+  it('handles Windows-style paths with backslashes', async () => {
+    const windowsPath = 'C:\\Users\\test\\project\\node_modules';
+    const items: NodeModulesInfo[] = [
+      {
+        path: windowsPath,
+        projectPath: 'C:\\Users\\test\\project',
+        projectName: 'winproject',
+        sizeBytes: 100,
+        sizeFormatted: '100 B',
+        packageCount: 1,
+        totalPackageCount: 1,
+        lastModified: new Date(),
+        lastModifiedFormatted: 'now',
+        selected: true,
+        isFavorite: false,
+        ageCategory: 'recent',
+        sizeCategory: 'small',
+        repoPath: 'C:\\Users\\test\\project',
+      },
+    ];
+
+    const options: DeleteOptions = {
+      dryRun: false,
+      yes: true,
+      force: false,
+      checkRunningProcesses: false,
+      showProgress: false,
+    };
+
+    const result = await deleteSelectedNodeModules(items, options);
+
+    expect(result.totalAttempted).toBe(1);
+    expect(result.details[0].error).not.toContain('not appear to be a node_modules');
+    expect(result.details[0].error).toBe('Directory does not exist');
+  });
 });
 
 describe('generateDeletionPreview', () => {
