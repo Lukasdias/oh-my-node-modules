@@ -5,7 +5,7 @@ use std::time::SystemTime;
 use clap::{Parser, ValueEnum};
 
 use crate::config;
-use crate::delete::{DeleteOptions, delete_selected};
+use crate::delete::{DeleteOptions, DeletionResult, delete_selected};
 use crate::model::NodeModulesInfo;
 use crate::scan::ScanOutcome;
 use crate::scan::discovery::ScanOptions;
@@ -221,29 +221,47 @@ fn run_auto(cli: &Cli) -> ExitCode {
         .collect();
 
     if selected.is_empty() {
-        println!("Nothing matched - no node_modules to delete.");
+        note(cli.json, "Nothing matched - no node_modules to delete.");
+        if cli.json {
+            return print_json(&empty_result(), "deletion result");
+        }
         return ExitCode::SUCCESS;
     }
 
     let total_bytes: u64 = selected.iter().map(|item| item.size_bytes).sum();
     let prefix = if cli.dry_run { "[DRY RUN] " } else { "" };
-    println!(
-        "{prefix}Will delete {} directories ({}):",
-        selected.len(),
-        format_bytes(total_bytes)
+    note(
+        cli.json,
+        format!(
+            "{prefix}Will delete {} directories ({}):",
+            selected.len(),
+            format_bytes(total_bytes)
+        ),
     );
     for item in selected.iter().take(AUTO_PREVIEW_LIMIT) {
-        println!("  {}", item.path.display());
+        note(cli.json, format!("  {}", item.path.display()));
     }
     if selected.len() > AUTO_PREVIEW_LIMIT {
-        println!("... and {} more", selected.len() - AUTO_PREVIEW_LIMIT);
+        note(
+            cli.json,
+            format!("... and {} more", selected.len() - AUTO_PREVIEW_LIMIT),
+        );
     }
 
     if cli.dry_run {
+        let opts = DeleteOptions {
+            dry_run: true,
+            force: cli.force,
+            check_in_use: !cli.no_check,
+        };
+        let result = delete_selected(&selected, &opts, run.now, &|_, _| {});
+        if cli.json {
+            return print_json(&result, "deletion result");
+        }
         println!(
             "[DRY RUN] Would free {} from {} directories",
-            format_bytes(total_bytes),
-            selected.len()
+            result.formatted_bytes_freed(),
+            result.successful
         );
         return ExitCode::SUCCESS;
     }
@@ -255,7 +273,7 @@ fn run_auto(cli: &Cli) -> ExitCode {
             format_bytes(total_bytes)
         );
         if !picker::confirm(&question) {
-            println!("Cancelled.");
+            note(cli.json, "Cancelled.");
             return ExitCode::SUCCESS;
         }
     }
@@ -290,8 +308,10 @@ fn run_auto(cli: &Cli) -> ExitCode {
 }
 
 /// Serialize `value` as pretty JSON to stdout, or fail with a colored error.
+///
+/// Delegates to [`report::to_json`] so the named helper owns the JSON shape.
 fn print_json<T: serde::Serialize>(value: &T, what: &str) -> ExitCode {
-    match serde_json::to_string_pretty(value) {
+    match report::to_json(value) {
         Ok(json) => {
             println!("{json}");
             ExitCode::SUCCESS
@@ -303,6 +323,29 @@ fn print_json<T: serde::Serialize>(value: &T, what: &str) -> ExitCode {
             );
             ExitCode::FAILURE
         }
+    }
+}
+
+/// A zeroed deletion result, emitted when the filter selects nothing.
+fn empty_result() -> DeletionResult {
+    DeletionResult {
+        total_attempted: 0,
+        successful: 0,
+        failed: 0,
+        bytes_freed: 0,
+        details: Vec::new(),
+    }
+}
+
+/// Print human prose to stdout, or to stderr when JSON owns stdout.
+///
+/// Under `--json` stdout must hold exactly one parseable document, so headers,
+/// previews, and footers move to stderr instead of corrupting it.
+fn note(json: bool, message: impl std::fmt::Display) {
+    if json {
+        eprintln!("{message}");
+    } else {
+        println!("{message}");
     }
 }
 

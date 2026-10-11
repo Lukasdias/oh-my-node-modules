@@ -111,6 +111,37 @@ fn auto_with_min_size_skips_small_targets() {
 }
 
 #[test]
+fn auto_json_emits_parseable_result() {
+    let root = fixture();
+    let pkg_a = root.path().join("pkgA/node_modules");
+    let pkg_b = root.path().join("pkgB/node_modules");
+
+    let output = Command::cargo_bin("onm")
+        .unwrap()
+        .args(["--auto", "--json", "--dry-run", "--yes"])
+        .arg(root.path())
+        .output()
+        .expect("run onm");
+
+    assert!(
+        output.status.success(),
+        "onm should exit 0, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("stdout must be exactly one JSON document");
+    assert!(value.is_object(), "result must be a JSON object");
+    assert!(
+        value
+            .get("total_attempted")
+            .is_some_and(serde_json::Value::is_number),
+        "total_attempted must be a number, got: {value}"
+    );
+    assert!(pkg_a.exists(), "dry run must not delete pkgA/node_modules");
+    assert!(pkg_b.exists(), "dry run must not delete pkgB/node_modules");
+}
+
+#[test]
 fn invalid_min_size_exits_nonzero() {
     let root = fixture();
     Command::cargo_bin("onm")

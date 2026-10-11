@@ -37,12 +37,12 @@ pub fn print_table(items: &[NodeModulesInfo], limit: usize, now: SystemTime, cwd
     }
 }
 
-/// Serialize `items` as a pretty-printed JSON array.
+/// Serialize `value` as a pretty-printed JSON document.
 ///
-/// Each object exposes at least `path` (string) and `size_bytes` (number);
-/// the remaining fields come from [`NodeModulesInfo`]'s `Serialize` impl.
-pub fn to_json(items: &[NodeModulesInfo]) -> Result<String, serde_json::Error> {
-    serde_json::to_string_pretty(items)
+/// Used for the scan array (`&[NodeModulesInfo]`) and the deletion result
+/// (`&DeletionResult`); any [`serde::Serialize`] value is accepted.
+pub fn to_json<T: serde::Serialize>(value: &T) -> Result<String, serde_json::Error> {
+    serde_json::to_string_pretty(value)
 }
 
 /// One-line totals for a scan: total size, project count, and stale count.
