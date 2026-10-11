@@ -3,6 +3,8 @@ use std::process::ExitCode;
 
 use clap::{Parser, ValueEnum};
 
+pub mod interactive;
+
 /// Command-line arguments for `onm`.
 #[derive(Parser, Debug)]
 #[command(
@@ -78,6 +80,13 @@ pub enum SortArg {
 }
 
 /// Entry point shared by the binary and tests.
-pub fn run(_cli: Cli) -> ExitCode {
-    ExitCode::SUCCESS
+///
+/// `--scan`/`--auto` non-interactive modes are implemented in Task 14; until
+/// then this dispatches every invocation to the interactive flow.
+pub fn run(cli: Cli) -> ExitCode {
+    if cli.scan || cli.auto {
+        eprintln!("error: --scan and --auto are not implemented yet");
+        return ExitCode::FAILURE;
+    }
+    interactive::run(&cli)
 }
