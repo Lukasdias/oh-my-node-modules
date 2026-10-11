@@ -1,25 +1,17 @@
 //! Interactive scan, pick, confirm, and delete flow.
 
-use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::{Duration, SystemTime};
 
 use indicatif::{ProgressBar, ProgressStyle};
 
 use crate::cli::Cli;
-use crate::config;
 use crate::delete::{DeleteOptions, delete_selected};
 use crate::model::NodeModulesInfo;
-use crate::scan::discovery::ScanOptions;
-use crate::scan::scan;
 use crate::ui::picker;
-use crate::ui::progress::ScanSpinner;
 use crate::ui::report;
 use crate::ui::theme;
 use crate::util::format_bytes;
-
-/// Number of scan errors printed before the remainder is summarized.
-const MAX_REPORTED_ERRORS: usize = 5;
 
 /// Run the interactive flow for `cli`.
 ///
@@ -28,56 +20,27 @@ const MAX_REPORTED_ERRORS: usize = 5;
 /// with [`ExitCode::FAILURE`]; an empty result or a cancelled prompt exits with
 /// [`ExitCode::SUCCESS`] without touching the filesystem.
 pub fn run(cli: &Cli) -> ExitCode {
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let root = resolve_root(cli);
-    let cfg = config::load(&cwd, home_dir().as_deref());
-
-    let opts = ScanOptions {
-        root: root.clone(),
-        include_hidden: cli.hidden,
-        max_depth: cli.max_depth,
-        follow_symlinks: false,
-        exclude: cfg.exclude.clone(),
+    let mut run = match super::scan_cli(cli) {
+        Ok(run) => run,
+        Err(code) => return code,
     };
 
-    let now = SystemTime::now();
-    let spinner = ScanSpinner::new();
-    let outcome = scan(&opts, &cfg, now, &|progress| spinner.update(progress));
-    spinner.finish("Scan complete");
-
-    report_scan_errors(&outcome.errors);
-
-    if !root.exists() {
-        // The scan already reported a missing root; only speak up if it did not.
-        if outcome.errors.is_empty() {
-            eprintln!(
-                "{}",
-                theme::paint(
-                    "red",
-                    &format!("error: scan root does not exist: {}", root.display()),
-                )
-            );
-        }
-        return ExitCode::FAILURE;
-    }
-
-    let summary = report::summary_line(&outcome, now);
-    let mut items = outcome.node_modules;
-    if items.is_empty() {
+    if run.outcome.node_modules.is_empty() {
         println!("No node_modules found.");
         return ExitCode::SUCCESS;
     }
 
-    picker::sort_items(&mut items, cli.sort, cli.asc);
+    let summary = report::summary_line(&run.outcome, run.now);
+    picker::sort_items(&mut run.outcome.node_modules, cli.sort, cli.asc);
     println!("{summary}");
 
-    let Some(indices) = picker::pick(&items) else {
+    let Some(indices) = picker::pick(&run.outcome.node_modules) else {
         println!("Cancelled.");
         return ExitCode::SUCCESS;
     };
     let selected: Vec<&NodeModulesInfo> = indices
         .iter()
-        .filter_map(|&index| items.get(index))
+        .filter_map(|&index| run.outcome.node_modules.get(index))
         .collect();
     if selected.is_empty() {
         println!("Nothing selected.");
@@ -147,22 +110,6 @@ fn delete_and_report(selected: &[&NodeModulesInfo], cli: &Cli) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-/// Resolve `cli.path`, defaulting to `.`, and absolutize it without resolving links.
-fn resolve_root(cli: &Cli) -> PathBuf {
-    let root = cli.path.clone().unwrap_or_else(|| PathBuf::from("."));
-    std::path::absolute(&root).unwrap_or(root)
-}
-
-/// The user's home directory from `HOME`, then `USERPROFILE`; `None` if unset.
-///
-/// The value is never logged.
-fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-        .filter(|path| !path.as_os_str().is_empty())
-}
-
 /// Build the fixed-width deletion progress bar, labelled for a real or dry run.
 fn deletion_bar(total: usize, dry_run: bool) -> ProgressBar {
     let bar = ProgressBar::new(total as u64);
@@ -173,14 +120,4 @@ fn deletion_bar(total: usize, dry_run: bool) -> ProgressBar {
     bar.set_message(if dry_run { "Dry run" } else { "Deleting" });
     bar.enable_steady_tick(Duration::from_millis(100));
     bar
-}
-
-/// Print up to [`MAX_REPORTED_ERRORS`] scan errors to stderr, then a count.
-fn report_scan_errors(errors: &[String]) {
-    for message in errors.iter().take(MAX_REPORTED_ERRORS) {
-        eprintln!("{}", theme::paint("red", &format!("error: {message}")));
-    }
-    if errors.len() > MAX_REPORTED_ERRORS {
-        eprintln!("... and {} more errors", errors.len() - MAX_REPORTED_ERRORS);
-    }
 }
