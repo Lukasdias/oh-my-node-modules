@@ -81,11 +81,12 @@ pub enum SortArg {
 
 /// Entry point shared by the binary and tests.
 ///
-/// `--scan`/`--auto` non-interactive modes are implemented in Task 14; until
-/// then this dispatches every invocation to the interactive flow.
+/// The interactive flow is reached only when no non-interactive mode is
+/// requested; `--scan`, `--json`, and `--auto` are implemented in Task 14 and
+/// must never prompt or delete until then.
 pub fn run(cli: Cli) -> ExitCode {
-    if cli.scan || cli.auto {
-        eprintln!("error: --scan and --auto are not implemented yet");
+    if cli.scan || cli.json || cli.auto {
+        eprintln!("error: --scan, --json, and --auto are not implemented yet");
         return ExitCode::FAILURE;
     }
     interactive::run(&cli)

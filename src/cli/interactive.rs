@@ -99,19 +99,26 @@ pub fn run(cli: &Cli) -> ExitCode {
 }
 
 /// Delete `selected`, rendering a progress bar and a per-failure summary.
+///
+/// Honors `cli.dry_run`: when set, the deletion only simulates and reports the
+/// size that would have been freed.
 fn delete_and_report(selected: &[&NodeModulesInfo], cli: &Cli) -> ExitCode {
     let opts = DeleteOptions {
-        dry_run: false,
+        dry_run: cli.dry_run,
         force: cli.force,
         check_in_use: !cli.no_check,
     };
 
-    let bar = deletion_bar(selected.len());
+    let bar = deletion_bar(selected.len(), cli.dry_run);
     let result = delete_selected(selected, &opts, SystemTime::now(), &|done, total| {
         bar.set_length(total as u64);
         bar.set_position(done as u64);
     });
-    bar.finish_with_message("Deletion complete");
+    bar.finish_with_message(if cli.dry_run {
+        "Dry run complete"
+    } else {
+        "Deletion complete"
+    });
 
     for detail in result.details.iter().filter(|detail| !detail.success) {
         let reason = detail.error.as_deref().unwrap_or("unknown error");
@@ -124,11 +131,19 @@ fn delete_and_report(selected: &[&NodeModulesInfo], cli: &Cli) -> ExitCode {
         );
     }
 
-    println!(
-        "Freed {} from {} directories",
-        result.formatted_bytes_freed(),
-        result.successful
-    );
+    if cli.dry_run {
+        println!(
+            "[DRY RUN] Would free {} from {} directories",
+            result.formatted_bytes_freed(),
+            result.successful
+        );
+    } else {
+        println!(
+            "Freed {} from {} directories",
+            result.formatted_bytes_freed(),
+            result.successful
+        );
+    }
     ExitCode::SUCCESS
 }
 
@@ -148,14 +163,14 @@ fn home_dir() -> Option<PathBuf> {
         .filter(|path| !path.as_os_str().is_empty())
 }
 
-/// Build the fixed-width deletion progress bar.
-fn deletion_bar(total: usize) -> ProgressBar {
+/// Build the fixed-width deletion progress bar, labelled for a real or dry run.
+fn deletion_bar(total: usize, dry_run: bool) -> ProgressBar {
     let bar = ProgressBar::new(total as u64);
     bar.set_style(
         ProgressStyle::with_template("{msg} {wide_bar} {pos}/{len}")
             .unwrap_or_else(|_| ProgressStyle::default_bar()),
     );
-    bar.set_message("Deleting");
+    bar.set_message(if dry_run { "Dry run" } else { "Deleting" });
     bar.enable_steady_tick(Duration::from_millis(100));
     bar
 }
