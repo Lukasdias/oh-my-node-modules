@@ -81,7 +81,9 @@ them without the picker. Without `--yes` it asks for confirmation first;
 
 - `.onmignore` in the current directory and in the home directory adds glob
   patterns to skip during discovery. Blank lines and `#` comments are ignored.
-  Defaults (`**/node_modules/**`, `**/.git/**`) are always applied.
+  Defaults (`**/node_modules/**`, `**/.git/**`) are always applied. An
+  `.onmignore` pattern cannot exclude a `node_modules` directory by name
+  directly; exclude its parent directory instead (e.g. `**/legacy/**`).
 - `.onmfavorites` in the home directory lists one absolute path per line. Those
   entries are marked as favorites and start deselected in the picker.
 
@@ -103,8 +105,8 @@ followed by removal.
 - Discovery uses the `ignore` walker in parallel; `node_modules` subtrees are
   pruned and `.onmignore` patterns are applied through `globset`.
 - Sizes, recursive package counts, `package.json` metadata, and Git repository
-  roots are computed per directory; sizes and counts are accumulated with
-  atomics.
+  roots are computed per directory, then fanned out in parallel with `rayon`
+  across targets.
 - Deletion is parallelized across targets with `rayon`. Each target's failure is
   recorded per item; a batch never aborts early.
 

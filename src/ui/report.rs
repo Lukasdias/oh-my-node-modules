@@ -6,7 +6,7 @@ use std::time::SystemTime;
 use crate::model::{AgeCategory, NodeModulesInfo, age_category};
 use crate::scan::ScanOutcome;
 use crate::ui::theme;
-use crate::util::{format_bytes, format_relative_time};
+use crate::util::{format_bytes, format_relative_time, write_line};
 
 /// Print at most `limit` rows to stdout as
 /// `[size]  project_name  [age]  repo_path`.
@@ -29,11 +29,11 @@ pub fn print_table(items: &[NodeModulesInfo], limit: usize, now: SystemTime, cwd
         );
         let name = item.project_name.as_str();
         let path = show_path(&item.repo_path, cwd);
-        println!("{size}  {name}  {age}  {path}");
+        write_line(&format!("{size}  {name}  {age}  {path}"));
     }
 
     if items.len() > limit {
-        println!("... and {} more", items.len() - limit);
+        write_line(&format!("... and {} more", items.len() - limit));
     }
 }
 

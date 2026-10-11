@@ -11,7 +11,7 @@ use crate::model::NodeModulesInfo;
 use crate::ui::picker;
 use crate::ui::report;
 use crate::ui::theme;
-use crate::util::format_bytes;
+use crate::util::{format_bytes, write_line};
 
 /// Run the interactive flow for `cli`.
 ///
@@ -26,16 +26,16 @@ pub fn run(cli: &Cli) -> ExitCode {
     };
 
     if run.outcome.node_modules.is_empty() {
-        println!("No node_modules found.");
+        write_line("No node_modules found.");
         return ExitCode::SUCCESS;
     }
 
     let summary = report::summary_line(&run.outcome, run.now);
     picker::sort_items(&mut run.outcome.node_modules, cli.sort, cli.asc);
-    println!("{summary}");
+    write_line(&summary);
 
     let Some(indices) = picker::pick(&run.outcome.node_modules) else {
-        println!("Cancelled.");
+        write_line("Cancelled.");
         return ExitCode::SUCCESS;
     };
     let selected: Vec<&NodeModulesInfo> = indices
@@ -43,7 +43,7 @@ pub fn run(cli: &Cli) -> ExitCode {
         .filter_map(|&index| run.outcome.node_modules.get(index))
         .collect();
     if selected.is_empty() {
-        println!("Nothing selected.");
+        write_line("Nothing selected.");
         return ExitCode::SUCCESS;
     }
 
@@ -54,7 +54,7 @@ pub fn run(cli: &Cli) -> ExitCode {
         format_bytes(bytes)
     );
     if !picker::confirm(&question) {
-        println!("Cancelled.");
+        write_line("Cancelled.");
         return ExitCode::SUCCESS;
     }
 
@@ -95,17 +95,17 @@ fn delete_and_report(selected: &[&NodeModulesInfo], cli: &Cli) -> ExitCode {
     }
 
     if cli.dry_run {
-        println!(
+        write_line(&format!(
             "[DRY RUN] Would free {} from {} directories",
             result.formatted_bytes_freed(),
             result.successful
-        );
+        ));
     } else {
-        println!(
+        write_line(&format!(
             "Freed {} from {} directories",
             result.formatted_bytes_freed(),
             result.successful
-        );
+        ));
     }
     ExitCode::SUCCESS
 }

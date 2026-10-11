@@ -14,7 +14,7 @@ use crate::ui::picker;
 use crate::ui::progress::ScanSpinner;
 use crate::ui::report;
 use crate::ui::theme;
-use crate::util::{format_bytes, parse_size};
+use crate::util::{format_bytes, parse_size, write_line};
 
 pub mod interactive;
 
@@ -186,11 +186,11 @@ fn run_scan_mode(cli: &Cli) -> ExitCode {
         .map(|item| item.size_bytes)
         .sum();
     let projects = count_label(run.outcome.node_modules.len(), "project");
-    println!(
+    write_line(&format!(
         "Total: {} across {} {projects}",
         format_bytes(total_bytes),
         run.outcome.node_modules.len()
-    );
+    ));
     ExitCode::SUCCESS
 }
 
@@ -258,11 +258,11 @@ fn run_auto(cli: &Cli) -> ExitCode {
         if cli.json {
             return print_json(&result, "deletion result");
         }
-        println!(
+        write_line(&format!(
             "[DRY RUN] Would free {} from {} directories",
             result.formatted_bytes_freed(),
             result.successful
-        );
+        ));
         return ExitCode::SUCCESS;
     }
 
@@ -299,11 +299,11 @@ fn run_auto(cli: &Cli) -> ExitCode {
             )
         );
     }
-    println!(
+    write_line(&format!(
         "Freed {} from {} directories",
         result.formatted_bytes_freed(),
         result.successful
-    );
+    ));
     ExitCode::SUCCESS
 }
 
@@ -313,7 +313,7 @@ fn run_auto(cli: &Cli) -> ExitCode {
 fn print_json<T: serde::Serialize>(value: &T, what: &str) -> ExitCode {
     match report::to_json(value) {
         Ok(json) => {
-            println!("{json}");
+            write_line(&json);
             ExitCode::SUCCESS
         }
         Err(err) => {
@@ -345,7 +345,7 @@ fn note(json: bool, message: impl std::fmt::Display) {
     if json {
         eprintln!("{message}");
     } else {
-        println!("{message}");
+        write_line(&message.to_string());
     }
 }
 

@@ -24,6 +24,33 @@ fn fixture() -> TempDir {
     root
 }
 
+/// Run `onm --scan --json <root>`, returning the `path` strings from the array.
+///
+/// `hidden` adds `--hidden`, so callers can compare a default scan with one
+/// that descends into dot-directories.
+fn scan_json_paths(root: &Path, hidden: bool) -> Vec<String> {
+    let mut command = Command::cargo_bin("onm").unwrap();
+    command.args(["--scan", "--json"]);
+    if hidden {
+        command.arg("--hidden");
+    }
+    let output = command.arg(root).output().expect("run onm");
+
+    assert!(
+        output.status.success(),
+        "onm should exit 0, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).expect("stdout is JSON");
+    value
+        .as_array()
+        .expect("top-level array")
+        .iter()
+        .filter_map(|item| item.get("path").and_then(serde_json::Value::as_str))
+        .map(str::to_string)
+        .collect()
+}
+
 #[test]
 fn version_flag_prints_name_and_version() {
     Command::cargo_bin("onm")
@@ -139,6 +166,42 @@ fn auto_json_emits_parseable_result() {
     );
     assert!(pkg_a.exists(), "dry run must not delete pkgA/node_modules");
     assert!(pkg_b.exists(), "dry run must not delete pkgB/node_modules");
+}
+
+#[test]
+fn auto_yes_deletes_for_real() {
+    let root = fixture();
+    let pkg_a = root.path().join("pkgA/node_modules");
+    let pkg_b = root.path().join("pkgB/node_modules");
+
+    Command::cargo_bin("onm")
+        .unwrap()
+        .args(["--auto", "--yes"])
+        .arg(root.path())
+        .assert()
+        .success();
+
+    assert!(!pkg_a.exists(), "pkgA/node_modules should be deleted");
+    assert!(!pkg_b.exists(), "pkgB/node_modules should be deleted");
+}
+
+#[test]
+fn hidden_dirs_included_with_flag() {
+    let root = tempdir().expect("tempdir");
+    write_file(&root.path().join(".hidden/node_modules/x/f.js"), b"x");
+
+    let without = scan_json_paths(root.path(), false);
+    assert!(
+        !without.iter().any(|path| path.contains(".hidden")),
+        "hidden node_modules must be skipped by default: {without:?}"
+    );
+
+    let with = scan_json_paths(root.path(), true);
+    assert!(
+        with.iter()
+            .any(|path| path.contains(".hidden/node_modules")),
+        "--hidden must include the hidden node_modules: {with:?}"
+    );
 }
 
 #[test]

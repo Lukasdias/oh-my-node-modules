@@ -10,8 +10,8 @@ crate (`oh-my-node-modules`) providing the `onm` binary. Versioning restarts at
 
 - Parallel discovery of project-level `node_modules` using the `ignore` walker,
   pruning nested `node_modules` and skipping hidden directories by default.
-- Parallel size, recursive package-count, `package.json` metadata, and Git root
-  resolution using `rayon` and atomics.
+- Per-directory size, recursive package-count, `package.json` metadata, and Git
+  root resolution, fanned out in parallel with `rayon` across targets.
 - Parallel deletion orchestration with `rayon`, a fast `remove_dir_all` path,
   and `--force` fallbacks (recursive permission fix, then rename-and-remove).
 - Safety checks before deletion: normalized path must end in `node_modules`, the

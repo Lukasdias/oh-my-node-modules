@@ -1,6 +1,7 @@
 //! Pure formatting and parsing helpers shared across the crate.
 
 use std::fmt;
+use std::io::Write;
 use std::time::SystemTime;
 
 /// Base for binary size units.
@@ -38,6 +39,18 @@ pub fn format_bytes(bytes: u64) -> String {
     } else {
         format!("{bytes} B")
     }
+}
+
+/// Write a line to stdout, ignoring a broken pipe (`EPIPE`) instead of panicking.
+///
+/// `println!` panics when the reader closes the pipe early (for example
+/// `onm --scan . | head`), which would violate the crate's "no panics on
+/// runtime paths" constraint. This discards any write error so a truncated
+/// consumer never aborts the process.
+pub fn write_line(line: &str) {
+    let stdout = std::io::stdout();
+    let mut lock = stdout.lock();
+    let _ = writeln!(lock, "{line}");
 }
 
 /// Error returned when [`parse_size`] cannot parse its input.
