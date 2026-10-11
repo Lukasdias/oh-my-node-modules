@@ -1,4 +1,5 @@
 //! Filesystem scanning: sizing and metadata enrichment for `node_modules`.
 
+pub mod discovery;
 pub mod project;
 pub mod size;

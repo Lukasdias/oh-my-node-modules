@@ -63,8 +63,16 @@ pub fn load(cwd: &Path, home: Option<&Path>) -> Config {
 /// not the directory itself; matching each ancestor covers both the directory
 /// and everything beneath it.
 pub fn is_excluded(config: &Config, path: &Path) -> bool {
+    is_excluded_by(&config.exclude, path)
+}
+
+/// Whether `path` (or one of its ancestors) matches a compiled exclude set.
+///
+/// The [`GlobSet`] form of [`is_excluded`], for callers that hold a compiled
+/// set rather than a whole [`Config`] (such as `scan::discovery`).
+pub fn is_excluded_by(exclude: &GlobSet, path: &Path) -> bool {
     path.ancestors()
-        .any(|ancestor| !ancestor.as_os_str().is_empty() && config.exclude.is_match(ancestor))
+        .any(|ancestor| !ancestor.as_os_str().is_empty() && exclude.is_match(ancestor))
 }
 
 /// Add `pattern` to `builder`, ignoring patterns that fail to compile.
