@@ -7,7 +7,11 @@ use std::path::{Path, PathBuf};
 use globset::{Glob, GlobSet, GlobSetBuilder};
 
 /// Default exclude glob patterns applied before any `.onmignore` entries.
-const DEFAULT_EXCLUDES: &[&str] = &["**/node_modules/**", "**/.git/**", "**/.*"];
+///
+/// Hidden directories are intentionally absent: whether they are traversed is
+/// governed by the walker's `hidden` setting (`--hidden`), not by a glob. This
+/// also keeps `.git` excluded even under `--hidden`.
+const DEFAULT_EXCLUDES: &[&str] = &["**/node_modules/**", "**/.git/**"];
 
 /// Name of the ignore file, looked up in `cwd` and then `home`.
 const IGNORE_FILE: &str = ".onmignore";

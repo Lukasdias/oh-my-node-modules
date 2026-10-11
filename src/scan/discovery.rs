@@ -2,9 +2,11 @@
 
 use std::ffi::OsStr;
 use std::path::PathBuf;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use globset::GlobSet;
-use ignore::{DirEntry, WalkBuilder};
+use ignore::{DirEntry, WalkBuilder, WalkState};
 
 use crate::config::is_excluded_by;
 
@@ -30,10 +32,11 @@ pub struct ScanOptions {
 /// Find project-level `node_modules` directories beneath `opts.root`.
 ///
 /// `root` is made absolute with [`std::path::absolute`] before walking, so every
-/// returned path is absolute. Traversal is a plain walk: the `ignore` crate's
-/// gitignore, `.ignore`, global, and parent handling are all disabled, hidden
-/// entries are skipped unless `opts.include_hidden`, and symbolic links are
-/// followed only when `opts.follow_symlinks` is set.
+/// returned path is absolute. Traversal uses the `ignore` crate's parallel
+/// walker; the gitignore, `.ignore`, global, and parent handling are all
+/// disabled (a plain walk), hidden entries are skipped by the walker unless
+/// `opts.include_hidden`, and symbolic links are followed only when
+/// `opts.follow_symlinks` is set.
 ///
 /// Pruning keeps only the shallowest `node_modules` in each branch. An entry is
 /// skipped when an ancestor component is already named `node_modules`, or when
@@ -43,9 +46,11 @@ pub struct ScanOptions {
 /// are still pruned by the ancestor rule, so nested dependency installs are
 /// never reported.
 ///
-/// `on_found` is called with the running count after each directory is pushed.
-/// Per-entry walk errors (for example an unreadable directory) are ignored and
-/// the walk continues; a missing or unreadable root yields an empty vector.
+/// `on_found` is called with the running count (from an [`AtomicUsize`], so the
+/// count is unique across threads) after each directory is pushed. Results are
+/// collected in walk order, which is not deterministic. Per-entry walk errors
+/// (for example an unreadable directory) are ignored and the walk continues; a
+/// missing or unreadable root yields an empty vector.
 pub fn discover(opts: &ScanOptions, on_found: &(dyn Fn(usize) + Sync + Send)) -> Vec<PathBuf> {
     let root = std::path::absolute(&opts.root).unwrap_or_else(|_| opts.root.clone());
     let exclude = opts.exclude.clone();
@@ -60,28 +65,42 @@ pub fn discover(opts: &ScanOptions, on_found: &(dyn Fn(usize) + Sync + Send)) ->
         .follow_links(opts.follow_symlinks)
         .max_depth(opts.max_depth)
         .filter_entry(move |entry| !should_prune(entry, &exclude))
-        .build();
+        .build_parallel();
 
-    let mut found = Vec::new();
-    for entry in walker {
-        // Unreadable entries surface as errors; skip them and keep walking.
-        let Ok(entry) = entry else {
-            continue;
-        };
-        if entry.file_name() != OsStr::new(NODE_MODULES) {
-            continue;
-        }
-        if !entry
-            .file_type()
-            .is_some_and(|file_type| file_type.is_dir())
-        {
-            continue;
-        }
-        found.push(entry.into_path());
-        on_found(found.len());
-    }
+    let found = Mutex::new(Vec::new());
+    let count = AtomicUsize::new(0);
+
+    walker.run(|| {
+        Box::new(|entry| {
+            // Unreadable entries surface as errors; skip them and keep walking.
+            let Ok(entry) = entry else {
+                return WalkState::Continue;
+            };
+            if entry.file_name() != OsStr::new(NODE_MODULES) {
+                return WalkState::Continue;
+            }
+            if !entry
+                .file_type()
+                .is_some_and(|file_type| file_type.is_dir())
+            {
+                return WalkState::Continue;
+            }
+
+            {
+                let mut paths = found
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                paths.push(entry.into_path());
+            }
+            let total = count.fetch_add(1, Ordering::Relaxed) + 1;
+            on_found(total);
+            WalkState::Continue
+        })
+    });
 
     found
+        .into_inner()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// Whether the walker should skip `entry` and, for a directory, its subtree.
@@ -176,6 +195,26 @@ mod tests {
         fs::create_dir_all(tmp.path().join(".hidden/node_modules")).unwrap();
 
         let mut opts = options(tmp.path());
+        assert!(discover(&opts, &noop).is_empty());
+
+        opts.include_hidden = true;
+        assert_eq!(
+            discover(&opts, &noop),
+            vec![tmp.path().join(".hidden/node_modules")]
+        );
+    }
+
+    #[test]
+    fn hidden_dirs_follow_include_hidden_with_default_excludes() {
+        // Hidden handling must come from the walker's `hidden` setting, not the
+        // default excludes; `.git` stays excluded even with `--hidden`.
+        let tmp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(tmp.path().join(".hidden/node_modules")).unwrap();
+        fs::create_dir_all(tmp.path().join(".git/node_modules")).unwrap();
+
+        let mut opts = options(tmp.path());
+        opts.exclude = exclude(&["**/node_modules/**", "**/.git/**"]);
+
         assert!(discover(&opts, &noop).is_empty());
 
         opts.include_hidden = true;
