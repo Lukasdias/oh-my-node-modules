@@ -2,6 +2,7 @@
 
 pub mod cli;
 pub mod config;
+pub mod delete;
 pub mod model;
 pub mod scan;
 pub mod ui;
