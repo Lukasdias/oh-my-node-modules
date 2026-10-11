@@ -48,6 +48,8 @@ src/
   lib.rs           public API, re-exports
   model.rs         NodeModulesInfo, SizeCategory, AgeCategory, thresholds
   cli.rs           clap derive args + mode selection
+  cli/
+    interactive.rs interactive scan -> pick -> confirm -> delete flow
   config.rs        .onmignore (globset) + .onmfavorites loading
   util.rs          format_bytes, relative_time, parse_size (pure, tested)
   scan/
@@ -56,6 +58,7 @@ src/
     project.rs     package.json, .git repo root, categories
     mod.rs         orchestrate scan -> Vec<NodeModulesInfo>
   ui/
+    mod.rs         ui module root and re-exports
     theme.rs       owo-colors semantic palette
     progress.rs    indicatif spinners/progress
     picker.rs      inquire multiselect (sorted + filterable)
