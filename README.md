@@ -12,8 +12,7 @@ Requires a Rust toolchain (1.85 or newer).
 cargo install --path .
 ```
 
-Prebuilt `onm` binaries are attached to each tagged release on the
-[releases page](https://github.com/Lukasdias/oh-my-node-modules/releases):
+Prebuilt `onm` binaries, when attached to a tagged release, use these names:
 
 - `onm-x86_64-unknown-linux-gnu.tar.gz`
 - `onm-x86_64-apple-darwin.tar.gz`
@@ -38,8 +37,9 @@ The scan and size passes run behind spinners. A summary line reports the total
 size, project count, and stale count. An `inquire` multi-select then lists one
 row per directory as `[size]  project  [age]  repo_path`, with size and age
 color-coded. Toggle entries with space, confirm with enter, and filter the list
-by typing. Entries in `.onmfavorites` start deselected. After selection, a
-confirm prompt reports how many directories and how many bytes will be deleted.
+by typing. Entries in `.onmfavorites` start deselected; the remaining entries
+start selected. After selection, a confirm prompt reports how many directories
+and how many bytes will be deleted.
 
 ### Report mode
 

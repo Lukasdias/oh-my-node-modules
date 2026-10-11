@@ -8,7 +8,7 @@ Single Rust crate `oh-my-node-modules` producing the `onm` binary.
 
 ```bash
 cargo fmt                                   # Format
-cargo fmt --check                           # Verify formatting (CI)
+cargo fmt --check                           # Verify formatting
 cargo clippy --all-targets -- -D warnings   # Lint, warnings are errors
 cargo test                                  # Run all tests
 cargo test <name>                           # Run a single test by name
@@ -53,10 +53,10 @@ src/
   config.rs        .onmignore (globset) + .onmfavorites loading
   util.rs          format_bytes, relative_time, parse_size (pure, tested)
   scan/
-    discovery.rs   ignore::WalkBuilder parallel walk; prune node_modules + hidden
-    size.rs        parallel size + package counts (atomics)
+    discovery.rs   ignore parallel walk; prune node_modules + hidden
+    size.rs        recursive size + package counts for one directory
     project.rs     package.json, .git repo root, categories
-    mod.rs         orchestrate scan -> Vec<NodeModulesInfo>
+    mod.rs         orchestrate scan -> Vec<NodeModulesInfo> (rayon fan-out)
   ui/
     mod.rs         ui module root and re-exports
     theme.rs       owo-colors semantic palette
