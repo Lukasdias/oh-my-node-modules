@@ -1,6 +1,7 @@
 # Build output
 dist/
 build/
+/target
 
 # Dependencies
 node_modules/

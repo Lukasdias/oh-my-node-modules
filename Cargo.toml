@@ -1,0 +1,23 @@
+[package]
+name = "oh-my-node-modules"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Find and clean up node_modules directories."
+
+[[bin]]
+name = "onm"
+path = "src/main.rs"
+
+[lib]
+name = "oh_my_node_modules"
+path = "src/lib.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+tempfile = "3"
