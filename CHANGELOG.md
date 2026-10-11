@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.1.0 (2026-10-11)
+
+Rust rewrite. The TypeScript/Bun implementation is replaced by a single Rust
+crate (`oh-my-node-modules`) providing the `onm` binary. Versioning restarts at
+`0.1.0`; previous npm releases are listed below.
+
+### Added
+
+- Parallel discovery of project-level `node_modules` using the `ignore` walker,
+  pruning nested `node_modules` and skipping hidden directories by default.
+- Parallel size, recursive package-count, `package.json` metadata, and Git root
+  resolution using `rayon` and atomics.
+- Parallel deletion orchestration with `rayon`, a fast `remove_dir_all` path,
+  and `--force` fallbacks (recursive permission fix, then rename-and-remove).
+- Safety checks before deletion: normalized path must end in `node_modules`, the
+  directory must exist, it must contain a subdirectory or its parent must hold
+  `package.json`, and an in-use lockfile check (`--no-check` to skip).
+- Prompt-based interactive CLI (`inquire`) with colored sizes and ages
+  (`owo-colors`) and scan/deletion spinners (`indicatif`).
+- Non-interactive modes: `--scan` colored table, `--json` output, and
+  `--auto --min-size <size>` batch deletion with `--dry-run`/`--yes`.
+- `.onmignore` exclude patterns and `.onmfavorites` favorites.
+- CI matrix (Linux/macOS/Windows) and a tag-triggered release workflow building
+  prebuilt binaries and publishing to crates.io.
+
+### Changed
+
+- Distribution moves from npm to crates.io and prebuilt GitHub Release binaries.
+
 ## 1.2.1 (2026-02-12)
 
 ### 🔧 Infrastructure
