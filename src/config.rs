@@ -88,10 +88,10 @@ fn add_glob(builder: &mut GlobSetBuilder, pattern: &str) {
     if let Ok(glob) = Glob::new(pattern) {
         builder.add(glob);
     }
-    if let Some(dir) = pattern.strip_suffix("/**") {
-        if let Ok(glob) = Glob::new(dir) {
-            builder.add(glob);
-        }
+    if let Some(dir) = pattern.strip_suffix("/**")
+        && let Ok(glob) = Glob::new(dir)
+    {
+        builder.add(glob);
     }
 }
 

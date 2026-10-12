@@ -18,7 +18,9 @@ cargo run -- --scan .                       # Run the binary
 
 ## Code Style Constraints
 
-- **Edition 2024**, **MSRV 1.85**, stable toolchain (`rust-toolchain.toml`).
+- **Edition 2024**, **MSRV 1.88** (`rust-version` in `Cargo.toml`), stable
+  toolchain (`rust-toolchain.toml`). CI pins 1.88.0 to enforce the MSRV; the
+  dependency tree requires 1.88 (`ignore` uses let-chains).
 - Every crate root carries `#![forbid(unsafe_code)]` (see `src/lib.rs`).
 - No `unwrap()`, `expect()`, or `panic!` on runtime paths. Use `Option`/`Result`
   and `unwrap_or`/`unwrap_or_else`/`unwrap_or_default`, or propagate with `?`.
@@ -125,11 +127,30 @@ String::from("Analysis failed")
 - **Scan semantics**: only project-level `node_modules` are reported (nested
   ones are pruned); hidden directories are opt-in via `--hidden`.
 
+## Continuous Integration
+
+`.github/workflows/ci.yml` runs on pushes to `main`, pull requests, and manual
+dispatch. Jobs: `lint` (fmt, clippy), `test` (Linux/macOS/Windows),
+`msrv` (1.88.0), `package` (release build + packaged-crate build), `docs`
+(rustdoc with `-D warnings`). CI only verifies; it never publishes.
+
+Publishing to crates.io is manual and local — see the Releasing section in
+`README.md`. Do not add a deploy or publish job to CI.
+
+## Documentation
+
+The README flow diagram is rendered from `docs/onm-flow.mmd` into
+`docs/onm-flow.svg`. Edit the `.mmd` and re-render both files together; the
+README embeds the SVG, and crates.io rewrites that relative path to the repo's
+default branch.
+
 ## Before Submitting
 
 ```bash
 cargo fmt --check
-cargo clippy --all-targets -- -D warnings
-cargo test
-cargo build --release
+cargo clippy --all-targets --locked -- -D warnings
+cargo test --locked --all-targets
+cargo +1.88.0 check --locked --all-targets
+cargo build --release --locked
+RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --locked
 ```

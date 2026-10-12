@@ -1,0 +1,58 @@
+sequenceDiagram
+    autonumber
+    actor User
+    participant CLI as onm
+    participant Cfg as config
+    participant Disc as scan::discovery
+    participant Enrich as project + size
+    participant UI as ui
+    participant Del as delete
+    participant FS as filesystem
+
+    User->>CLI: onm [path] with flags
+    CLI->>Cfg: load .onmignore and .onmfavorites
+    Cfg-->>CLI: exclude globs + favorites
+
+    CLI->>Disc: discover root with ScanOptions
+    Disc->>FS: parallel walk, pruning node_modules
+    FS-->>Disc: candidate paths
+    Note over Disc: hidden skipped unless --hidden,<br/>.onmignore applied, --max-depth honored
+    Disc-->>CLI: discovered paths
+
+    alt root missing
+        CLI-->>User: "error: scan root does not exist", exit 1
+    else root exists
+        CLI->>Enrich: enrich each path via rayon
+        Enrich->>FS: size, packages, package.json, .git root
+        FS-->>Enrich: metadata
+        Enrich-->>CLI: NodeModulesInfo + per-target errors
+        Note over CLI: spinner: Discovering, Sizing, Done
+    end
+
+    alt --scan or --json
+        CLI->>UI: sort, then table or JSON
+        UI-->>User: sizes + totals, nothing deleted
+    else --auto
+        CLI->>UI: filter by --min-size, preview up to 10
+        opt neither --dry-run nor --yes
+            UI->>User: Delete N directories?
+            User-->>UI: confirm or cancel
+        end
+        UI->>Del: delete_selected(selected, opts)
+    else interactive (default)
+        CLI->>UI: summary line + multiselect
+        UI->>User: pick entries, favorites start deselected
+        User-->>UI: selection
+        UI->>User: Delete N directories?
+        User-->>UI: confirm or cancel
+        UI->>Del: delete_selected(selected, opts)
+    end
+
+    Note over Del: safety check: ends in node_modules, exists,<br/>has a subdir or parent has package.json,<br/>lockfile untouched for 60s unless --no-check
+    par rayon, one task per target
+        Del->>FS: remove_dir_all or the --force chain
+    and a failing target is recorded
+        Del->>Del: continue, never abort the batch
+    end
+    Del-->>UI: bytes freed + per-target details
+    UI-->>User: Freed TOTAL from N directories

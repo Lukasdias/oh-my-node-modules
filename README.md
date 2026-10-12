@@ -6,13 +6,14 @@ Crate: `oh-my-node-modules`. Binary: `onm`.
 
 ## Installation
 
-Requires a Rust toolchain (1.85 or newer).
+Requires a Rust toolchain (1.88 or newer).
 
 ```bash
 cargo install --path .
 ```
 
-Prebuilt `onm` binaries, when attached to a tagged release, use these names:
+Prebuilt `onm` binaries, when attached to a tagged release, use these names
+(they are built and uploaded manually, see [Releasing](#releasing)):
 
 - `onm-x86_64-unknown-linux-gnu.tar.gz`
 - `onm-x86_64-apple-darwin.tar.gz`
@@ -102,6 +103,10 @@ followed by removal.
 
 ## How it works
 
+![onm scan, select, and delete flow](docs/onm-flow.svg)
+
+Source: [`docs/onm-flow.mmd`](docs/onm-flow.mmd), rendered with Mermaid.
+
 - Discovery uses the `ignore` walker in parallel; `node_modules` subtrees are
   pruned and `.onmignore` patterns are applied through `globset`.
 - Sizes, recursive package counts, `package.json` metadata, and Git repository
@@ -112,12 +117,35 @@ followed by removal.
 
 ## Development
 
+The same checks run on every push and pull request (`.github/workflows/ci.yml`):
+
 ```bash
-cargo fmt
-cargo clippy --all-targets -- -D warnings
-cargo test
-cargo build --release
+cargo fmt --check
+cargo clippy --all-targets --locked -- -D warnings
+cargo test --locked --all-targets
+cargo +1.88.0 check --locked --all-targets   # MSRV
+cargo build --release --locked
+cargo publish --dry-run --locked             # packaged crate builds
+RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --locked
 ```
+
+## Releasing
+
+Publishing is manual and local; CI never deploys. From a clean checkout:
+
+```bash
+# 1. Bump `version` in Cargo.toml and add a CHANGELOG entry.
+# 2. Verify the same checks CI runs, then publish:
+cargo publish --locked
+
+# 3. Tag the commit that matches the published version:
+git tag v0.1.1 && git push origin v0.1.1
+
+# 4. Optional: build and attach the prebuilt binaries to the GitHub release.
+cargo build --release --locked --target <target>
+```
+
+Keep the tag and the crate version in sync (`v<version>`).
 
 ## Repository
 

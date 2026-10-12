@@ -2,14 +2,14 @@
 name = "oh-my-node-modules"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 description = "Find and clean up node_modules directories."
 license = "MIT"
 repository = "https://github.com/Lukasdias/oh-my-node-modules"
 readme = "README.md"
 keywords = ["node_modules", "cleanup", "cli", "disk-space"]
 categories = ["command-line-utilities", "development-tools"]
-exclude = ["docs/", ".github/"]
+exclude = ["docs/", ".github/", "tasks/"]
 
 [[bin]]
 name = "onm"

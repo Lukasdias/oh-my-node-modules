@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- CI workflow (`.github/workflows/ci.yml`) covering formatting, Clippy, tests on
+  Linux/macOS/Windows, the MSRV, the packaged crate build, and rustdoc.
+- Sequence diagram of the scan, select, and delete flow in the README
+  (`docs/onm-flow.svg`, source `docs/onm-flow.mmd`).
+
+### Changed
+
+- `rust-version` raised from 1.85 to 1.88. The declared 1.85 was not buildable:
+  `ignore` uses let-chains (Rust 1.88) and declares no `rust-version`, so cargo's
+  MSRV-aware resolver could not avoid it.
+
+### Removed
+
+- Tag-triggered release workflow. Publishing to crates.io and attaching prebuilt
+  binaries are manual, local steps documented in `README.md`.
+
 ## 0.1.0 (2026-10-11)
 
 Rust rewrite. The TypeScript/Bun implementation is replaced by a single Rust
