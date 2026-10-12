@@ -53,12 +53,14 @@ fn scan_json_paths(root: &Path, hidden: bool) -> Vec<String> {
 
 #[test]
 fn version_flag_prints_name_and_version() {
+    // Tracks Cargo.toml, so a release bump cannot break this test.
+    let expected = format!("onm {}", env!("CARGO_PKG_VERSION"));
     Command::cargo_bin("onm")
         .unwrap()
         .arg("--version")
         .assert()
         .success()
-        .stdout(contains("0.1.0"));
+        .stdout(contains(expected));
 }
 
 #[test]
