@@ -147,6 +147,14 @@ cargo build --release --locked --target <target>
 
 Keep the tag and the crate version in sync (`v<version>`).
 
+## Version history
+
+The crate restarted its version scheme at `0.1.0` when the TypeScript/Bun
+implementation was replaced by Rust. The npm-era `v1.x` tags were removed on
+2026-10-12 so the tag list reflects the current crate only; the tag-to-commit
+map, and how to recreate any of them, is in
+[`docs/version-history.md`](docs/version-history.md).
+
 ## Repository
 
 https://github.com/Lukasdias/oh-my-node-modules
