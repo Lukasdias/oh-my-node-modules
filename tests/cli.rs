@@ -198,8 +198,9 @@ fn hidden_dirs_included_with_flag() {
 
     let with = scan_json_paths(root.path(), true);
     assert!(
+        // JSON paths use the platform separator, so normalize before matching.
         with.iter()
-            .any(|path| path.contains(".hidden/node_modules")),
+            .any(|path| path.replace('\\', "/").ends_with(".hidden/node_modules")),
         "--hidden must include the hidden node_modules: {with:?}"
     );
 }

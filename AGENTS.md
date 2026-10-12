@@ -144,6 +144,15 @@ The README flow diagram is rendered from `docs/onm-flow.mmd` into
 README embeds the SVG, and crates.io rewrites that relative path to the repo's
 default branch.
 
+```bash
+curl -X POST -H "Content-Type: text/plain" \
+  --data-binary @docs/onm-flow.mmd https://kroki.io/mermaid/svg -o docs/onm-flow.svg
+```
+
+Keep the diagram under roughly 1200px wide and prefer a handful of lifelines:
+GitHub scales the SVG to the container width, so a wide diagram renders as
+unreadable small text.
+
 ## Before Submitting
 
 ```bash
